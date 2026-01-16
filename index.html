@@ -47,13 +47,56 @@
             opacity: 0.9;
             line-height: 1.6;
         }
+
+        .games-list {
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+            margin-top: 2rem;
+            align-items: center;
+        }
+
+        .game-card {
+            background: rgba(255, 255, 255, 0.15);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            padding: 2rem;
+            text-decoration: none;
+            color: white;
+            transition: transform 0.3s ease, background 0.3s ease;
+            width: 100%;
+            max-width: 400px;
+            border: 2px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .game-card:hover {
+            transform: translateY(-5px);
+            background: rgba(255, 255, 255, 0.25);
+        }
+
+        .game-card h2 {
+            font-size: 2rem;
+            margin: 0 0 0.5rem 0;
+        }
+
+        .game-card p {
+            font-size: 1rem;
+            margin: 0;
+            opacity: 0.95;
+        }
     </style>
 </head>
 <body>
     <div class="container">
-        <div class="wip-badge">Work in Progress</div>
         <h1>Kid Games</h1>
-        <p>Something fun is coming soon! We're working hard to bring you exciting games for kids.</p>
+        <p>Welcome to Kid Games! Choose a game to play:</p>
+
+        <div class="games-list">
+            <a href="games/2048/" class="game-card">
+                <h2>2048</h2>
+                <p>Join the numbers to reach the 2048 tile!</p>
+            </a>
+        </div>
     </div>
 </body>
 </html>

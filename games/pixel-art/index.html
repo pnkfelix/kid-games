@@ -548,25 +548,165 @@
     </div>
 
     <script>
-        // 16-color palette (classic pixel art palette)
-        const PALETTE = [
-            { name: 'Black', hex: '#1a1c2c' },
-            { name: 'Dark Purple', hex: '#5d275d' },
-            { name: 'Dark Blue', hex: '#b13e53' },
-            { name: 'Dark Red', hex: '#ef7d57' },
-            { name: 'Orange', hex: '#ffcd75' },
-            { name: 'Yellow', hex: '#a7f070' },
-            { name: 'Light Green', hex: '#38b764' },
-            { name: 'Dark Green', hex: '#257179' },
-            { name: 'Dark Cyan', hex: '#29366f' },
-            { name: 'Blue', hex: '#3b5dc9' },
-            { name: 'Light Blue', hex: '#41a6f6' },
-            { name: 'Cyan', hex: '#73eff7' },
-            { name: 'White', hex: '#f4f4f4' },
-            { name: 'Light Gray', hex: '#94b0c2' },
-            { name: 'Gray', hex: '#566c86' },
-            { name: 'Dark Gray', hex: '#333c57' }
-        ];
+        // Dynamic palette - will be generated per image
+        let PALETTE = [];
+        const PALETTE_SIZE = 16;
+
+        // Median-cut color quantization algorithm
+        function extractPaletteFromImage(imageData, numColors) {
+            const pixels = [];
+            const data = imageData.data;
+
+            // Sample pixels (skip some for performance on large images)
+            const step = Math.max(1, Math.floor(data.length / 4 / 10000));
+            for (let i = 0; i < data.length; i += 4 * step) {
+                const r = data[i];
+                const g = data[i + 1];
+                const b = data[i + 2];
+                const a = data[i + 3];
+                if (a > 128) { // Skip transparent pixels
+                    pixels.push([r, g, b]);
+                }
+            }
+
+            if (pixels.length === 0) {
+                // Fallback to grayscale palette if no pixels
+                return generateFallbackPalette(numColors);
+            }
+
+            // Median-cut algorithm
+            const boxes = [pixels];
+
+            while (boxes.length < numColors) {
+                // Find the box with the largest range in any dimension
+                let maxRange = -1;
+                let maxBoxIndex = 0;
+                let maxChannel = 0;
+
+                for (let i = 0; i < boxes.length; i++) {
+                    const box = boxes[i];
+                    if (box.length < 2) continue;
+
+                    for (let channel = 0; channel < 3; channel++) {
+                        const values = box.map(p => p[channel]);
+                        const range = Math.max(...values) - Math.min(...values);
+                        if (range > maxRange) {
+                            maxRange = range;
+                            maxBoxIndex = i;
+                            maxChannel = channel;
+                        }
+                    }
+                }
+
+                if (maxRange <= 0) break;
+
+                // Split the box along the channel with largest range
+                const boxToSplit = boxes[maxBoxIndex];
+                boxToSplit.sort((a, b) => a[maxChannel] - b[maxChannel]);
+
+                const mid = Math.floor(boxToSplit.length / 2);
+                const box1 = boxToSplit.slice(0, mid);
+                const box2 = boxToSplit.slice(mid);
+
+                boxes.splice(maxBoxIndex, 1, box1, box2);
+            }
+
+            // Calculate average color for each box
+            const palette = boxes.map(box => {
+                if (box.length === 0) return [128, 128, 128];
+                const avg = [0, 0, 0];
+                box.forEach(pixel => {
+                    avg[0] += pixel[0];
+                    avg[1] += pixel[1];
+                    avg[2] += pixel[2];
+                });
+                return [
+                    Math.round(avg[0] / box.length),
+                    Math.round(avg[1] / box.length),
+                    Math.round(avg[2] / box.length)
+                ];
+            });
+
+            // Sort palette by luminance for better UX
+            palette.sort((a, b) => {
+                const lumA = 0.299 * a[0] + 0.587 * a[1] + 0.114 * a[2];
+                const lumB = 0.299 * b[0] + 0.587 * b[1] + 0.114 * b[2];
+                return lumA - lumB;
+            });
+
+            // Convert to palette format with names
+            return palette.map(rgb => ({
+                name: getColorName(rgb[0], rgb[1], rgb[2]),
+                hex: rgbToHex(rgb[0], rgb[1], rgb[2])
+            }));
+        }
+
+        function generateFallbackPalette(numColors) {
+            const palette = [];
+            for (let i = 0; i < numColors; i++) {
+                const gray = Math.round((i / (numColors - 1)) * 255);
+                palette.push({
+                    name: `Gray ${i + 1}`,
+                    hex: rgbToHex(gray, gray, gray)
+                });
+            }
+            return palette;
+        }
+
+        function rgbToHex(r, g, b) {
+            return '#' + [r, g, b].map(x => x.toString(16).padStart(2, '0')).join('');
+        }
+
+        function getColorName(r, g, b) {
+            // Convert to HSL for better naming
+            const max = Math.max(r, g, b) / 255;
+            const min = Math.min(r, g, b) / 255;
+            const l = (max + min) / 2;
+
+            let h = 0, s = 0;
+            if (max !== min) {
+                const d = max - min;
+                s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+
+                const rNorm = r / 255, gNorm = g / 255, bNorm = b / 255;
+                if (max === rNorm) {
+                    h = ((gNorm - bNorm) / d + (gNorm < bNorm ? 6 : 0)) / 6;
+                } else if (max === gNorm) {
+                    h = ((bNorm - rNorm) / d + 2) / 6;
+                } else {
+                    h = ((rNorm - gNorm) / d + 4) / 6;
+                }
+            }
+
+            // Determine lightness prefix
+            let prefix = '';
+            if (l < 0.2) prefix = 'Dark ';
+            else if (l > 0.8) prefix = 'Light ';
+
+            // Determine color name based on hue and saturation
+            if (s < 0.1) {
+                // Achromatic
+                if (l < 0.15) return 'Black';
+                if (l > 0.85) return 'White';
+                if (l < 0.4) return 'Dark Gray';
+                if (l > 0.6) return 'Light Gray';
+                return 'Gray';
+            }
+
+            // Chromatic colors
+            const hDeg = h * 360;
+            let colorName;
+            if (hDeg < 15 || hDeg >= 345) colorName = 'Red';
+            else if (hDeg < 45) colorName = 'Orange';
+            else if (hDeg < 70) colorName = 'Yellow';
+            else if (hDeg < 150) colorName = 'Green';
+            else if (hDeg < 190) colorName = 'Cyan';
+            else if (hDeg < 260) colorName = 'Blue';
+            else if (hDeg < 290) colorName = 'Purple';
+            else colorName = 'Pink';
+
+            return prefix + colorName;
+        }
 
         // Sample images (generated procedurally)
         const SAMPLE_IMAGES = [
@@ -592,7 +732,8 @@
             showingSolution: false,
             history: [],
             zoom: 1,
-            colorCounts: [] // How many of each color remain
+            colorCounts: [], // How many of each color remain
+            needsPaletteRefresh: false // Flag to regenerate palette for new image
         };
 
         // DOM elements
@@ -695,6 +836,7 @@
             const img = new Image();
             img.onload = () => {
                 gameState.originalImage = img;
+                gameState.needsPaletteRefresh = true; // Generate new palette for this image
                 showScreen('settings');
                 updatePreview();
             };
@@ -737,6 +879,7 @@
             const img = new Image();
             img.onload = () => {
                 gameState.originalImage = img;
+                gameState.needsPaletteRefresh = true; // Generate new palette for this image
                 showScreen('settings');
                 updatePreview();
             };
@@ -747,7 +890,10 @@
             if (!gameState.originalImage) return;
 
             const gridSize = parseInt(document.getElementById('gridSizeSelect').value);
-            const { pixels, width, height } = processImage(gameState.originalImage, gridSize);
+            // Generate palette on first preview (when palette is empty or image changed)
+            const needsPalette = PALETTE.length === 0 || gameState.needsPaletteRefresh;
+            const { pixels, width, height } = processImage(gameState.originalImage, gridSize, needsPalette);
+            gameState.needsPaletteRefresh = false;
 
             previewCanvas.width = width;
             previewCanvas.height = height;
@@ -761,7 +907,7 @@
             }
         }
 
-        function processImage(img, targetSize) {
+        function processImage(img, targetSize, generatePalette = false) {
             // Calculate dimensions maintaining aspect ratio
             let width, height;
             if (img.width > img.height) {
@@ -786,6 +932,18 @@
             tempCtx.drawImage(img, 0, 0, width, height);
             const imageData = tempCtx.getImageData(0, 0, width, height);
             const data = imageData.data;
+
+            // Generate palette from this image if requested
+            if (generatePalette) {
+                // Use full resolution for better palette extraction
+                const fullCanvas = document.createElement('canvas');
+                fullCanvas.width = img.width;
+                fullCanvas.height = img.height;
+                const fullCtx = fullCanvas.getContext('2d');
+                fullCtx.drawImage(img, 0, 0);
+                const fullImageData = fullCtx.getImageData(0, 0, img.width, img.height);
+                PALETTE = extractPaletteFromImage(fullImageData, PALETTE_SIZE);
+            }
 
             // Map each pixel to nearest palette color
             const pixels = [];

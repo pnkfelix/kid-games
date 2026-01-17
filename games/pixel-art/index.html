@@ -1102,12 +1102,8 @@
             });
         }
 
-        function adjustZoom(delta) {
-            gameState.zoom = Math.max(0.5, Math.min(4, gameState.zoom + delta));
-            applyZoom();
-        }
-
-        function fitZoom() {
+        // Calculate minimum zoom to fit entire grid on screen
+        function getMinZoom() {
             const container = document.getElementById('gridContainer');
             const maxWidth = container.clientWidth - 40;
             const maxHeight = window.innerHeight * 0.5;
@@ -1118,8 +1114,20 @@
 
             const scaleX = maxWidth / neededWidth;
             const scaleY = maxHeight / neededHeight;
-            gameState.zoom = Math.min(scaleX, scaleY, 2);
-            gameState.zoom = Math.max(0.5, gameState.zoom);
+
+            // Allow zooming out enough to fit the entire image, with a floor of 0.1
+            return Math.max(0.1, Math.min(scaleX, scaleY));
+        }
+
+        function adjustZoom(delta) {
+            const minZoom = getMinZoom();
+            gameState.zoom = Math.max(minZoom, Math.min(4, gameState.zoom + delta));
+            applyZoom();
+        }
+
+        function fitZoom() {
+            const minZoom = getMinZoom();
+            gameState.zoom = minZoom;
 
             // Reset pan when fitting to screen
             gameState.panX = 0;
@@ -1188,7 +1196,8 @@
 
             // Calculate zoom change
             const scale = currentDistance / gameState.initialPinchDistance;
-            const newZoom = Math.max(0.5, Math.min(4, gameState.initialPinchZoom * scale));
+            const minZoom = getMinZoom();
+            const newZoom = Math.max(minZoom, Math.min(4, gameState.initialPinchZoom * scale));
 
             // Calculate pan change (relative to last center)
             if (gameState.lastPinchCenter) {

@@ -1007,6 +1007,10 @@
             lastPaintedPixel = pixelKey;
 
             const index = y * gameState.gridWidth + x;
+
+            // Only paint if the selected color matches the target number for this pixel
+            if (gameState.selectedColor !== gameState.targetPixels[index]) return;
+
             const previousColor = gameState.currentPixels[index];
 
             if (previousColor !== gameState.selectedColor) {

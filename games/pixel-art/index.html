@@ -268,7 +268,7 @@
 
         .palette-grid {
             display: grid;
-            grid-template-columns: repeat(8, 1fr);
+            grid-template-columns: repeat(auto-fill, minmax(45px, 1fr));
             gap: 8px;
         }
 
@@ -412,7 +412,7 @@
             }
 
             .palette-grid {
-                grid-template-columns: repeat(4, 1fr);
+                grid-template-columns: repeat(auto-fill, minmax(40px, 1fr));
             }
 
             .home-link {
@@ -1035,6 +1035,10 @@
             grid.innerHTML = '';
 
             PALETTE.forEach((color, index) => {
+                // Skip colors that are fully painted
+                const remaining = getRemainingCount(index);
+                if (remaining === 0) return;
+
                 const div = document.createElement('div');
                 div.className = 'palette-color' + (index === gameState.selectedColor ? ' selected' : '');
                 div.style.backgroundColor = color.hex;
@@ -1053,7 +1057,7 @@
                 const countSpan = document.createElement('span');
                 countSpan.className = 'count';
                 countSpan.id = `count-${index}`;
-                countSpan.textContent = getRemainingCount(index);
+                countSpan.textContent = remaining;
                 div.appendChild(countSpan);
 
                 div.addEventListener('click', () => selectColor(index));
@@ -1072,8 +1076,8 @@
 
         function selectColor(index) {
             gameState.selectedColor = index;
-            document.querySelectorAll('.palette-color').forEach((el, i) => {
-                el.classList.toggle('selected', i === index);
+            document.querySelectorAll('.palette-color').forEach(el => {
+                el.classList.toggle('selected', parseInt(el.dataset.index) === index);
             });
             updateSelectedColorName();
         }
@@ -1094,12 +1098,30 @@
         }
 
         function updateColorCounts() {
+            let needsRebuild = false;
+
             PALETTE.forEach((_, index) => {
                 const el = document.getElementById(`count-${index}`);
+                const remaining = getRemainingCount(index);
                 if (el) {
-                    el.textContent = getRemainingCount(index);
+                    el.textContent = remaining;
+                    // Check if this color just became complete
+                    if (remaining === 0) {
+                        needsRebuild = true;
+                    }
                 }
             });
+
+            if (needsRebuild) {
+                // If selected color is now complete, auto-select first available color
+                if (getRemainingCount(gameState.selectedColor) === 0) {
+                    const nextColor = PALETTE.findIndex((_, idx) => getRemainingCount(idx) > 0);
+                    if (nextColor !== -1) {
+                        gameState.selectedColor = nextColor;
+                    }
+                }
+                setupPalette();
+            }
         }
 
         // Calculate minimum zoom to fit entire grid on screen

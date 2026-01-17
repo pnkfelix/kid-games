@@ -229,14 +229,20 @@
             border-radius: 15px;
             padding: 10px;
             margin-bottom: 15px;
-            overflow: auto;
+            overflow: hidden;
             max-height: 60vh;
+            position: relative;
             touch-action: none;
+        }
+
+        .canvas-wrapper {
+            position: relative;
+            transform-origin: 0 0;
+            will-change: transform;
         }
 
         #pixelCanvas {
             display: block;
-            margin: 0 auto;
             image-rendering: pixelated;
             cursor: crosshair;
         }
@@ -523,7 +529,9 @@
             </div>
 
             <div class="grid-container" id="gridContainer">
-                <canvas id="pixelCanvas"></canvas>
+                <div class="canvas-wrapper" id="canvasWrapper">
+                    <canvas id="pixelCanvas"></canvas>
+                </div>
             </div>
 
             <div class="palette-container">
@@ -733,7 +741,14 @@
             history: [],
             zoom: 1,
             colorCounts: [], // How many of each color remain
-            needsPaletteRefresh: false // Flag to regenerate palette for new image
+            needsPaletteRefresh: false, // Flag to regenerate palette for new image
+            // Pan and pinch-zoom state
+            panX: 0,
+            panY: 0,
+            isPinching: false,
+            initialPinchDistance: 0,
+            initialPinchZoom: 1,
+            lastPinchCenter: null
         };
 
         // DOM elements
@@ -805,7 +820,8 @@
 
             canvas.addEventListener('touchstart', handleTouchStart, { passive: false });
             canvas.addEventListener('touchmove', handleTouchMove, { passive: false });
-            canvas.addEventListener('touchend', handleCanvasEnd);
+            canvas.addEventListener('touchend', handleTouchEnd);
+            canvas.addEventListener('touchcancel', handleTouchEnd);
 
             // Modal
             document.getElementById('playAgainBtn').addEventListener('click', () => {
@@ -997,6 +1013,9 @@
             gameState.history = [];
             gameState.showingSolution = false;
             gameState.selectedColor = 0;
+            gameState.panX = 0;
+            gameState.panY = 0;
+            gameState.isPinching = false;
 
             // Count colors
             gameState.colorCounts = new Array(PALETTE.length).fill(0);
@@ -1102,6 +1121,10 @@
             gameState.zoom = Math.min(scaleX, scaleY, 2);
             gameState.zoom = Math.max(0.5, gameState.zoom);
 
+            // Reset pan when fitting to screen
+            gameState.panX = 0;
+            gameState.panY = 0;
+
             applyZoom();
         }
 
@@ -1110,7 +1133,86 @@
             canvas.width = gameState.gridWidth * pixelSize;
             canvas.height = gameState.gridHeight * pixelSize;
             document.getElementById('zoomLevel').textContent = Math.round(gameState.zoom * 100) + '%';
+            applyPanTransform();
             renderGame();
+        }
+
+        function applyPanTransform() {
+            const wrapper = document.getElementById('canvasWrapper');
+            const container = document.getElementById('gridContainer');
+
+            // Constrain pan to keep canvas visible
+            const containerRect = container.getBoundingClientRect();
+            const maxPanX = Math.max(0, canvas.width - containerRect.width + 20);
+            const maxPanY = Math.max(0, canvas.height - containerRect.height + 20);
+
+            gameState.panX = Math.max(-maxPanX, Math.min(0, gameState.panX));
+            gameState.panY = Math.max(-maxPanY, Math.min(0, gameState.panY));
+
+            wrapper.style.transform = `translate(${gameState.panX}px, ${gameState.panY}px)`;
+        }
+
+        function resetPan() {
+            gameState.panX = 0;
+            gameState.panY = 0;
+            applyPanTransform();
+        }
+
+        // Pinch-zoom and pan helper functions
+        function getPinchDistance(touches) {
+            const dx = touches[0].clientX - touches[1].clientX;
+            const dy = touches[0].clientY - touches[1].clientY;
+            return Math.sqrt(dx * dx + dy * dy);
+        }
+
+        function getPinchCenter(touches) {
+            return {
+                x: (touches[0].clientX + touches[1].clientX) / 2,
+                y: (touches[0].clientY + touches[1].clientY) / 2
+            };
+        }
+
+        function handlePinchStart(touches) {
+            gameState.isPinching = true;
+            gameState.initialPinchDistance = getPinchDistance(touches);
+            gameState.initialPinchZoom = gameState.zoom;
+            gameState.lastPinchCenter = getPinchCenter(touches);
+            isDrawing = false; // Stop painting when pinching
+        }
+
+        function handlePinchMove(touches) {
+            if (!gameState.isPinching) return;
+
+            const currentDistance = getPinchDistance(touches);
+            const currentCenter = getPinchCenter(touches);
+
+            // Calculate zoom change
+            const scale = currentDistance / gameState.initialPinchDistance;
+            const newZoom = Math.max(0.5, Math.min(4, gameState.initialPinchZoom * scale));
+
+            // Calculate pan change (relative to last center)
+            if (gameState.lastPinchCenter) {
+                const dx = currentCenter.x - gameState.lastPinchCenter.x;
+                const dy = currentCenter.y - gameState.lastPinchCenter.y;
+                gameState.panX += dx;
+                gameState.panY += dy;
+            }
+
+            gameState.lastPinchCenter = currentCenter;
+
+            // Apply zoom if changed significantly
+            if (Math.abs(newZoom - gameState.zoom) > 0.01) {
+                gameState.zoom = newZoom;
+                applyZoom();
+            } else {
+                applyPanTransform();
+            }
+        }
+
+        function handlePinchEnd() {
+            gameState.isPinching = false;
+            gameState.initialPinchDistance = 0;
+            gameState.lastPinchCenter = null;
         }
 
         let isDrawing = false;
@@ -1135,19 +1237,48 @@
 
         function handleTouchStart(e) {
             e.preventDefault();
-            isDrawing = true;
-            lastPaintedPixel = null;
-            const touch = e.touches[0];
-            const rect = canvas.getBoundingClientRect();
-            paintPixel(touch.clientX - rect.left, touch.clientY - rect.top);
+
+            // Two or more fingers = pinch/pan gesture
+            if (e.touches.length >= 2) {
+                handlePinchStart(e.touches);
+                return;
+            }
+
+            // Single finger = paint (only if not in pinch mode)
+            if (!gameState.isPinching) {
+                isDrawing = true;
+                lastPaintedPixel = null;
+                const touch = e.touches[0];
+                const rect = canvas.getBoundingClientRect();
+                paintPixel(touch.clientX - rect.left, touch.clientY - rect.top);
+            }
         }
 
         function handleTouchMove(e) {
             e.preventDefault();
-            if (isDrawing) {
+
+            // Two or more fingers = pinch/pan gesture
+            if (e.touches.length >= 2) {
+                handlePinchMove(e.touches);
+                return;
+            }
+
+            // Single finger paint (only if drawing and not pinching)
+            if (isDrawing && !gameState.isPinching) {
                 const touch = e.touches[0];
                 const rect = canvas.getBoundingClientRect();
                 paintPixel(touch.clientX - rect.left, touch.clientY - rect.top);
+            }
+        }
+
+        function handleTouchEnd(e) {
+            // If no more touches, end all gestures
+            if (e.touches.length === 0) {
+                handleCanvasEnd();
+                handlePinchEnd();
+            } else if (e.touches.length === 1) {
+                // Went from 2 fingers to 1 - end pinch but don't start painting
+                handlePinchEnd();
             }
         }
 

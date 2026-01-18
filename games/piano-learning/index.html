@@ -1170,7 +1170,15 @@
                 ctx.fillText('\u{1D11E}', x, baselineY);
             } else {
                 // Bass clef (F clef) - using Unicode
-                ctx.fillText('\u{1D122}', x, y - 5);
+                // The two dots of the bass clef should straddle the F line (4th line from bottom)
+                // which is at staffTop + lineSpacing = 75px.
+                // Use smaller font size than treble clef since bass clef glyph renders larger.
+                ctx.font = '90px serif';
+                // The F line is at staffTop + lineSpacing. Offset adjusted empirically
+                // to position the dots around the F line.
+                const fLineY = staffTop + lineSpacing;
+                const bassOffset = 15;
+                ctx.fillText('\u{1D122}', x, fLineY + bassOffset);
             }
         }
 

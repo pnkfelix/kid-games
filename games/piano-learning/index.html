@@ -2138,11 +2138,9 @@
         }
 
         // Convert note to MIDI number
-        // MIDI standard: C4 (middle C) = 60, A4 = 69
-        // Formula: (octave + 1) * 12 + noteIndex
         function noteToMidi(note, octave) {
             const noteIndex = noteNames.indexOf(note);
-            return (octave + 1) * 12 + noteIndex;
+            return octave * 12 + noteIndex;
         }
 
         // Render musical score

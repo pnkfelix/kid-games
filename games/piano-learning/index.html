@@ -1161,10 +1161,10 @@
                 // Treble clef (G clef) - using Unicode
                 // The curl of the G clef should wrap around the G line (2nd line from bottom)
                 // which is at staffTop + 3 * lineSpacing = 105px.
-                // At 140px font, the curl offset scales proportionally from the 70px baseline.
-                // Original: 70px font with offset 30. Scaled: 140px font with offset 60.
-                // Reference point y = 90px (middle line), so offset = 60.
-                const offset = 60;
+                // At 140px font, the curl needs to wrap around the G line.
+                // The offset doesn't scale linearly with font size.
+                // Adjusted empirically to position curl on the G line (2nd from bottom).
+                const offset = 45;
                 const baselineY = y + offset;
 
                 // DEBUG: Draw the G line (2nd from bottom) in red

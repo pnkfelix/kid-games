@@ -225,7 +225,14 @@
 
         /* Pixel Grid */
         .grid-container {
-            background: white;
+            background:
+                linear-gradient(45deg, #e0e0e0 25%, transparent 25%),
+                linear-gradient(-45deg, #e0e0e0 25%, transparent 25%),
+                linear-gradient(45deg, transparent 75%, #e0e0e0 75%),
+                linear-gradient(-45deg, transparent 75%, #e0e0e0 75%);
+            background-size: 20px 20px;
+            background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
+            background-color: white;
             border-radius: 15px;
             padding: 10px;
             margin-bottom: 15px;
@@ -564,6 +571,191 @@
         let PALETTE = [];
         const PALETTE_SIZE = 16;
 
+        // Subject detection - detect subject vs background in pre-downsampled image
+        function detectSubjectMask(imageData, width, height) {
+            const data = imageData.data;
+            const mask = new Uint8Array(width * height); // 0 = background, 1 = subject
+
+            // First check if image has meaningful alpha transparency
+            let hasTransparency = false;
+            let opaqueCount = 0;
+            let transparentCount = 0;
+
+            for (let i = 3; i < data.length; i += 4) {
+                if (data[i] < 128) {
+                    transparentCount++;
+                } else {
+                    opaqueCount++;
+                }
+            }
+
+            hasTransparency = transparentCount > (width * height * 0.01); // More than 1% transparent
+
+            if (hasTransparency) {
+                // Use alpha channel to determine subject
+                for (let i = 0; i < width * height; i++) {
+                    mask[i] = data[i * 4 + 3] >= 128 ? 1 : 0;
+                }
+                return mask;
+            }
+
+            // No transparency - use edge flood-fill approach
+            // Sample colors from all edges to find background color
+            const edgeColors = [];
+            const colorTolerance = 40; // Color distance tolerance for background detection
+
+            // Top and bottom edges
+            for (let x = 0; x < width; x++) {
+                edgeColors.push(getPixelColor(data, x, 0, width));
+                edgeColors.push(getPixelColor(data, x, height - 1, width));
+            }
+            // Left and right edges
+            for (let y = 0; y < height; y++) {
+                edgeColors.push(getPixelColor(data, 0, y, width));
+                edgeColors.push(getPixelColor(data, width - 1, y, width));
+            }
+
+            // Find the most common edge color (likely background)
+            const bgColor = findDominantColor(edgeColors);
+
+            // Initialize all pixels as subject (1)
+            mask.fill(1);
+
+            // Flood-fill from edges to mark background
+            const visited = new Uint8Array(width * height);
+            const queue = [];
+
+            // Add all edge pixels that match background color to queue
+            for (let x = 0; x < width; x++) {
+                if (isColorSimilar(getPixelColor(data, x, 0, width), bgColor, colorTolerance)) {
+                    queue.push([x, 0]);
+                }
+                if (isColorSimilar(getPixelColor(data, x, height - 1, width), bgColor, colorTolerance)) {
+                    queue.push([x, height - 1]);
+                }
+            }
+            for (let y = 0; y < height; y++) {
+                if (isColorSimilar(getPixelColor(data, 0, y, width), bgColor, colorTolerance)) {
+                    queue.push([0, y]);
+                }
+                if (isColorSimilar(getPixelColor(data, width - 1, y, width), bgColor, colorTolerance)) {
+                    queue.push([width - 1, y]);
+                }
+            }
+
+            // BFS flood-fill from edges
+            while (queue.length > 0) {
+                const [x, y] = queue.shift();
+                const idx = y * width + x;
+
+                if (x < 0 || x >= width || y < 0 || y >= height) continue;
+                if (visited[idx]) continue;
+
+                const pixelColor = getPixelColor(data, x, y, width);
+                if (!isColorSimilar(pixelColor, bgColor, colorTolerance)) continue;
+
+                visited[idx] = 1;
+                mask[idx] = 0; // Mark as background
+
+                // Add neighbors
+                queue.push([x + 1, y]);
+                queue.push([x - 1, y]);
+                queue.push([x, y + 1]);
+                queue.push([x, y - 1]);
+            }
+
+            return mask;
+        }
+
+        function getPixelColor(data, x, y, width) {
+            const idx = (y * width + x) * 4;
+            return [data[idx], data[idx + 1], data[idx + 2]];
+        }
+
+        function isColorSimilar(c1, c2, tolerance) {
+            const dr = c1[0] - c2[0];
+            const dg = c1[1] - c2[1];
+            const db = c1[2] - c2[2];
+            return Math.sqrt(dr * dr + dg * dg + db * db) < tolerance;
+        }
+
+        function findDominantColor(colors) {
+            // Simple clustering to find most common color
+            if (colors.length === 0) return [255, 255, 255];
+
+            // Use k-means-like approach with a single cluster
+            // Find the color that has the most similar neighbors
+            const tolerance = 30;
+            let bestColor = colors[0];
+            let bestCount = 0;
+
+            for (let i = 0; i < Math.min(colors.length, 100); i++) {
+                const c = colors[i];
+                let count = 0;
+                for (let j = 0; j < colors.length; j++) {
+                    if (isColorSimilar(c, colors[j], tolerance)) {
+                        count++;
+                    }
+                }
+                if (count > bestCount) {
+                    bestCount = count;
+                    bestColor = c;
+                }
+            }
+
+            // Average all colors similar to the best
+            let sumR = 0, sumG = 0, sumB = 0, count = 0;
+            for (const c of colors) {
+                if (isColorSimilar(c, bestColor, tolerance)) {
+                    sumR += c[0];
+                    sumG += c[1];
+                    sumB += c[2];
+                    count++;
+                }
+            }
+
+            return [
+                Math.round(sumR / count),
+                Math.round(sumG / count),
+                Math.round(sumB / count)
+            ];
+        }
+
+        // Downsample subject mask to match grid size
+        function downsampleMask(mask, srcWidth, srcHeight, dstWidth, dstHeight) {
+            const result = new Uint8Array(dstWidth * dstHeight);
+            const scaleX = srcWidth / dstWidth;
+            const scaleY = srcHeight / dstHeight;
+
+            for (let y = 0; y < dstHeight; y++) {
+                for (let x = 0; x < dstWidth; x++) {
+                    // Sample the corresponding region in source
+                    const srcX1 = Math.floor(x * scaleX);
+                    const srcY1 = Math.floor(y * scaleY);
+                    const srcX2 = Math.min(Math.ceil((x + 1) * scaleX), srcWidth);
+                    const srcY2 = Math.min(Math.ceil((y + 1) * scaleY), srcHeight);
+
+                    // Count subject pixels in this region
+                    let subjectCount = 0;
+                    let totalCount = 0;
+
+                    for (let sy = srcY1; sy < srcY2; sy++) {
+                        for (let sx = srcX1; sx < srcX2; sx++) {
+                            if (mask[sy * srcWidth + sx] === 1) {
+                                subjectCount++;
+                            }
+                            totalCount++;
+                        }
+                    }
+
+                    // Mark as subject if majority of source pixels were subject
+                    result[y * dstWidth + x] = (subjectCount > totalCount * 0.5) ? 1 : 0;
+                }
+            }
+
+            return result;
+        }
+
         // Median-cut color quantization algorithm
         function extractPaletteFromImage(imageData, numColors) {
             const pixels = [];
@@ -737,6 +929,7 @@
             originalImage: null,
             targetPixels: [], // What the solution looks like (palette indices)
             currentPixels: [], // Current player progress (-1 = unpainted)
+            subjectMask: [], // 1 = subject pixel (playable), 0 = background (transparent)
             gridWidth: 32,
             gridHeight: 32,
             selectedColor: 0,
@@ -912,19 +1105,42 @@
             const gridSize = parseInt(document.getElementById('gridSizeSelect').value);
             // Generate palette on first preview (when palette is empty or image changed)
             const needsPalette = PALETTE.length === 0 || gameState.needsPaletteRefresh;
-            const { pixels, width, height } = processImage(gameState.originalImage, gridSize, needsPalette);
+            const { pixels, width, height, subjectMask } = processImage(gameState.originalImage, gridSize, needsPalette);
             gameState.needsPaletteRefresh = false;
 
-            previewCanvas.width = width;
-            previewCanvas.height = height;
+            // Scale up preview for better visibility
+            const scale = Math.max(1, Math.floor(200 / Math.max(width, height)));
+            previewCanvas.width = width * scale;
+            previewCanvas.height = height * scale;
 
             for (let y = 0; y < height; y++) {
                 for (let x = 0; x < width; x++) {
-                    const colorIndex = pixels[y * width + x];
-                    previewCtx.fillStyle = PALETTE[colorIndex].hex;
-                    previewCtx.fillRect(x, y, 1, 1);
+                    const index = y * width + x;
+                    const px = x * scale;
+                    const py = y * scale;
+
+                    if (subjectMask[index] === 1) {
+                        // Subject pixel - show actual color
+                        const colorIndex = pixels[index];
+                        previewCtx.fillStyle = PALETTE[colorIndex].hex;
+                        previewCtx.fillRect(px, py, scale, scale);
+                    } else {
+                        // Background pixel - show checkerboard pattern for transparency
+                        drawCheckerboard(previewCtx, px, py, scale);
+                    }
                 }
             }
+        }
+
+        // Draw a checkerboard pattern to indicate transparency
+        function drawCheckerboard(ctx, x, y, size) {
+            const halfSize = size / 2;
+            ctx.fillStyle = '#ccc';
+            ctx.fillRect(x, y, halfSize, halfSize);
+            ctx.fillRect(x + halfSize, y + halfSize, halfSize, halfSize);
+            ctx.fillStyle = '#fff';
+            ctx.fillRect(x + halfSize, y, halfSize, halfSize);
+            ctx.fillRect(x, y + halfSize, halfSize, halfSize);
         }
 
         function processImage(img, targetSize, generatePalette = false) {
@@ -942,6 +1158,20 @@
             width = Math.max(width, 8);
             height = Math.max(height, 8);
 
+            // Get full resolution image data for subject detection and palette
+            const fullCanvas = document.createElement('canvas');
+            fullCanvas.width = img.width;
+            fullCanvas.height = img.height;
+            const fullCtx = fullCanvas.getContext('2d');
+            fullCtx.drawImage(img, 0, 0);
+            const fullImageData = fullCtx.getImageData(0, 0, img.width, img.height);
+
+            // Detect subject in full resolution image
+            const fullMask = detectSubjectMask(fullImageData, img.width, img.height);
+
+            // Downsample the mask to grid size
+            const subjectMask = downsampleMask(fullMask, img.width, img.height, width, height);
+
             // Create temporary canvas for downsampling
             const tempCanvas = document.createElement('canvas');
             tempCanvas.width = width;
@@ -953,16 +1183,11 @@
             const imageData = tempCtx.getImageData(0, 0, width, height);
             const data = imageData.data;
 
-            // Generate palette from this image if requested
+            // Generate palette from this image if requested (only from subject pixels)
             if (generatePalette) {
-                // Use full resolution for better palette extraction
-                const fullCanvas = document.createElement('canvas');
-                fullCanvas.width = img.width;
-                fullCanvas.height = img.height;
-                const fullCtx = fullCanvas.getContext('2d');
-                fullCtx.drawImage(img, 0, 0);
-                const fullImageData = fullCtx.getImageData(0, 0, img.width, img.height);
-                PALETTE = extractPaletteFromImage(fullImageData, PALETTE_SIZE);
+                // Filter fullImageData to only include subject pixels for palette extraction
+                const subjectImageData = filterImageDataByMask(fullImageData, fullMask, img.width, img.height);
+                PALETTE = extractPaletteFromImage(subjectImageData, PALETTE_SIZE);
             }
 
             // Map each pixel to nearest palette color
@@ -975,7 +1200,34 @@
                 pixels.push(colorIndex);
             }
 
-            return { pixels, width, height };
+            return { pixels, width, height, subjectMask };
+        }
+
+        // Filter image data to only include subject pixels (for palette extraction)
+        function filterImageDataByMask(imageData, mask, width, height) {
+            // Create a new imageData-like object with only subject pixels
+            const filteredData = new Uint8ClampedArray(imageData.data.length);
+            let hasSubject = false;
+
+            for (let i = 0; i < width * height; i++) {
+                if (mask[i] === 1) {
+                    filteredData[i * 4] = imageData.data[i * 4];
+                    filteredData[i * 4 + 1] = imageData.data[i * 4 + 1];
+                    filteredData[i * 4 + 2] = imageData.data[i * 4 + 2];
+                    filteredData[i * 4 + 3] = 255; // Opaque
+                    hasSubject = true;
+                } else {
+                    // Transparent for background
+                    filteredData[i * 4 + 3] = 0;
+                }
+            }
+
+            // If no subject detected, return original
+            if (!hasSubject) {
+                return imageData;
+            }
+
+            return { data: filteredData, width, height };
         }
 
         function findNearestColor(r, g, b) {
@@ -1008,10 +1260,11 @@
             const gridSize = parseInt(document.getElementById('gridSizeSelect').value);
             gameState.showNumbers = document.getElementById('showNumbersSelect').value;
 
-            const { pixels, width, height } = processImage(gameState.originalImage, gridSize);
+            const { pixels, width, height, subjectMask } = processImage(gameState.originalImage, gridSize);
 
             gameState.targetPixels = pixels;
             gameState.currentPixels = new Array(pixels.length).fill(-1);
+            gameState.subjectMask = subjectMask;
             gameState.gridWidth = width;
             gameState.gridHeight = height;
             gameState.history = [];
@@ -1021,10 +1274,12 @@
             gameState.panY = 0;
             gameState.isPinching = false;
 
-            // Count colors
+            // Count colors (only for subject pixels)
             gameState.colorCounts = new Array(PALETTE.length).fill(0);
-            pixels.forEach(colorIndex => {
-                gameState.colorCounts[colorIndex]++;
+            pixels.forEach((colorIndex, i) => {
+                if (subjectMask[i] === 1) {
+                    gameState.colorCounts[colorIndex]++;
+                }
             });
 
             // Setup canvas
@@ -1094,7 +1349,10 @@
         function getRemainingCount(colorIndex) {
             let count = 0;
             for (let i = 0; i < gameState.targetPixels.length; i++) {
-                if (gameState.targetPixels[i] === colorIndex && gameState.currentPixels[i] !== colorIndex) {
+                // Only count subject pixels
+                if (gameState.subjectMask[i] === 1 &&
+                    gameState.targetPixels[i] === colorIndex &&
+                    gameState.currentPixels[i] !== colorIndex) {
                     count++;
                 }
             }
@@ -1332,6 +1590,9 @@
 
             const index = y * gameState.gridWidth + x;
 
+            // Ignore background pixels (non-subject)
+            if (gameState.subjectMask[index] !== 1) return;
+
             // Only paint if the selected color matches the target number for this pixel
             if (gameState.selectedColor !== gameState.targetPixels[index]) return;
 
@@ -1390,9 +1651,17 @@
             const index = y * gameState.gridWidth + x;
             const targetColor = gameState.targetPixels[index];
             const currentColor = gameState.currentPixels[index];
+            const isSubject = gameState.subjectMask[index] === 1;
 
             const px = x * pixelSize;
             const py = y * pixelSize;
+
+            // Background pixels are transparent (not rendered)
+            if (!isSubject) {
+                // Clear this pixel area (transparent)
+                ctx.clearRect(px, py, pixelSize, pixelSize);
+                return;
+            }
 
             if (gameState.showingSolution) {
                 // Show solution
@@ -1444,23 +1713,23 @@
 
         function updateProgress() {
             let correct = 0;
-            let painted = 0;
-            const total = gameState.targetPixels.length;
+            let subjectTotal = 0;
 
-            for (let i = 0; i < total; i++) {
-                if (gameState.currentPixels[i] >= 0) {
-                    painted++;
+            for (let i = 0; i < gameState.targetPixels.length; i++) {
+                // Only count subject pixels
+                if (gameState.subjectMask[i] === 1) {
+                    subjectTotal++;
                     if (gameState.currentPixels[i] === gameState.targetPixels[i]) {
                         correct++;
                     }
                 }
             }
 
-            const percent = Math.round((correct / total) * 100);
+            const percent = subjectTotal > 0 ? Math.round((correct / subjectTotal) * 100) : 100;
             document.getElementById('progressText').textContent = percent + '%';
 
             // Check completion
-            if (correct === total) {
+            if (correct === subjectTotal && subjectTotal > 0) {
                 setTimeout(() => {
                     document.getElementById('completionModal').classList.add('active');
                 }, 500);

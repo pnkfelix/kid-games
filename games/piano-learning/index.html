@@ -1386,7 +1386,7 @@
             gameState.isPlaying = true;
             playBtn.textContent = 'Pause';
             gameState.lastTime = performance.now();
-            animate();
+            gameState.animationId = requestAnimationFrame(animate);
         }
 
         // Stop playback

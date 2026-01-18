@@ -1154,44 +1154,16 @@
         // Draw clef
         function drawClef(clef, x, y, staffTop, lineSpacing) {
             ctx.fillStyle = '#333';
-            ctx.font = '140px serif';
+            ctx.font = '160px serif';
             ctx.textAlign = 'center';
 
             if (clef === 'treble') {
                 // Treble clef (G clef) - using Unicode
                 // The curl of the G clef should wrap around the G line (2nd line from bottom)
                 // which is at staffTop + 3 * lineSpacing = 105px.
-                // At 140px font, the curl needs to wrap around the G line.
-                // The offset doesn't scale linearly with font size.
-                // Adjusted empirically to position curl on the G line (2nd from bottom).
-                const offset = 45;
+                // Offset adjusted empirically to position curl on the G line.
+                const offset = 48;
                 const baselineY = y + offset;
-
-                // DEBUG: Draw the G line (2nd from bottom) in red
-                const gLineY = staffTop + 3 * lineSpacing;
-                ctx.strokeStyle = 'red';
-                ctx.lineWidth = 2;
-                ctx.beginPath();
-                ctx.moveTo(x - 40, gLineY);
-                ctx.lineTo(x + 40, gLineY);
-                ctx.stroke();
-
-                // DEBUG: Draw the bottom line in orange
-                const bottomLineY = staffTop + 4 * lineSpacing;
-                ctx.strokeStyle = 'orange';
-                ctx.lineWidth = 2;
-                ctx.beginPath();
-                ctx.moveTo(x - 40, bottomLineY);
-                ctx.lineTo(x + 40, bottomLineY);
-                ctx.stroke();
-
-                // DEBUG: Draw the baseline in blue
-                ctx.strokeStyle = 'blue';
-                ctx.lineWidth = 1;
-                ctx.beginPath();
-                ctx.moveTo(x - 40, baselineY);
-                ctx.lineTo(x + 40, baselineY);
-                ctx.stroke();
 
                 // Draw the clef
                 ctx.fillStyle = '#333';

@@ -253,7 +253,11 @@
             background: linear-gradient(180deg, #e0e0e0 0%, #d0d0d0 100%);
         }
 
-        .white-key.highlight {
+        .white-key.highlight-active {
+            background: linear-gradient(180deg, #FF6B6B 0%, #EE5A5A 100%);
+        }
+
+        .white-key.highlight-predicted {
             background: linear-gradient(180deg, #90EE90 0%, #7CCD7C 100%);
         }
 
@@ -277,7 +281,8 @@
             box-shadow: 0 2px 5px rgba(0,0,0,0.3);
         }
 
-        .white-key.highlight .finger-number {
+        .white-key.highlight-active .finger-number,
+        .white-key.highlight-predicted .finger-number {
             display: flex;
         }
 
@@ -305,7 +310,11 @@
             height: 108px;
         }
 
-        .black-key.highlight {
+        .black-key.highlight-active {
+            background: linear-gradient(180deg, #CC4444 0%, #AA3333 100%);
+        }
+
+        .black-key.highlight-predicted {
             background: linear-gradient(180deg, #228B22 0%, #1a6b1a 100%);
         }
 
@@ -322,7 +331,8 @@
             font-weight: bold;
         }
 
-        .black-key.highlight .finger-number {
+        .black-key.highlight-active .finger-number,
+        .black-key.highlight-predicted .finger-number {
             display: flex;
         }
 
@@ -356,7 +366,12 @@
             border-radius: 4px;
         }
 
-        .legend-color.highlight {
+        .legend-color.active {
+            background: #FF6B6B;
+            border: 1px solid #EE5A5A;
+        }
+
+        .legend-color.predicted {
             background: #90EE90;
             border: 1px solid #7CCD7C;
         }
@@ -548,8 +563,12 @@
 
         <div class="legend">
             <div class="legend-item">
-                <div class="legend-color highlight"></div>
-                <span>Key to press</span>
+                <div class="legend-color active"></div>
+                <span>Current key (play now)</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color predicted"></div>
+                <span>Next key (coming up)</span>
             </div>
             <div class="legend-item">
                 <div class="legend-finger">3</div>
@@ -973,7 +992,7 @@
             progressFill.style.width = '0%';
 
             buildPiano(song);
-            renderScore();
+            drawCursor();  // This also renders the score
             updateHighlights();
             showScreen('game');
         }
@@ -1254,6 +1273,9 @@
             const song = gameState.currentSong;
             if (!song) return;
 
+            // Render score first to set up note positions (_x values)
+            renderScore();
+
             // Find current note based on beat position
             let beatSum = 0;
             let currentNoteIndex = 0;
@@ -1276,10 +1298,7 @@
             const noteProgress = (gameState.currentBeat - beatSum) / note.duration;
             const cursorX = note._x + noteProgress * note._width;
 
-            // Redraw score and add cursor
-            renderScore();
-
-            // Draw cursor line
+            // Draw cursor line (red vertical line)
             ctx.strokeStyle = '#e74c3c';
             ctx.lineWidth = 3;
             ctx.beginPath();
@@ -1300,32 +1319,49 @@
 
             // Clear all highlights
             Object.values(gameState.pianoKeys).forEach(key => {
-                key.classList.remove('highlight');
+                key.classList.remove('highlight-active', 'highlight-predicted');
                 const fingerNum = key.querySelector('.finger-number');
                 if (fingerNum) fingerNum.textContent = '';
             });
 
-            // Find current note
+            // Find current note and next note
             let beatSum = 0;
             let currentNote = null;
+            let currentNoteIndex = -1;
 
-            for (const note of song.notes) {
+            for (let i = 0; i < song.notes.length; i++) {
+                const note = song.notes[i];
                 if (beatSum <= gameState.currentBeat && gameState.currentBeat < beatSum + note.duration) {
                     currentNote = note;
+                    currentNoteIndex = i;
                     break;
                 }
                 beatSum += note.duration;
             }
 
-            // Highlight current note's key
+            // Highlight current note's key (active - red)
             if (currentNote) {
                 const noteId = `${currentNote.note.replace('#', 's')}${currentNote.octave}`;
                 const key = gameState.pianoKeys[noteId];
                 if (key) {
-                    key.classList.add('highlight');
+                    key.classList.add('highlight-active');
                     const fingerNum = key.querySelector('.finger-number');
                     if (fingerNum) {
                         fingerNum.textContent = currentNote.finger;
+                    }
+                }
+
+                // Highlight next note's key (predicted - green)
+                if (currentNoteIndex >= 0 && currentNoteIndex < song.notes.length - 1) {
+                    const nextNote = song.notes[currentNoteIndex + 1];
+                    const nextNoteId = `${nextNote.note.replace('#', 's')}${nextNote.octave}`;
+                    const nextKey = gameState.pianoKeys[nextNoteId];
+                    if (nextKey && nextNoteId !== `${currentNote.note.replace('#', 's')}${currentNote.octave}`) {
+                        nextKey.classList.add('highlight-predicted');
+                        const fingerNum = nextKey.querySelector('.finger-number');
+                        if (fingerNum) {
+                            fingerNum.textContent = nextNote.finger;
+                        }
                     }
                 }
             }
@@ -1367,7 +1403,7 @@
         function restart() {
             stopPlayback();
             gameState.currentBeat = 0;
-            renderScore();
+            drawCursor();  // This also renders the score
             updateHighlights();
             progressFill.style.width = '0%';
 

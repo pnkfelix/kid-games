@@ -1178,7 +1178,35 @@
                 // to position the dots around the F line.
                 const fLineY = staffTop + lineSpacing;
                 const bassOffset = 50;
-                ctx.fillText('\u{1D122}', x, fLineY + bassOffset);
+                const bassBaselineY = fLineY + bassOffset;
+
+                // DEBUG: Draw the F line (4th from bottom / 2nd from top) in red
+                ctx.strokeStyle = 'red';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.moveTo(x - 40, fLineY);
+                ctx.lineTo(x + 40, fLineY);
+                ctx.stroke();
+
+                // DEBUG: Draw the top line in orange
+                ctx.strokeStyle = 'orange';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.moveTo(x - 40, staffTop);
+                ctx.lineTo(x + 40, staffTop);
+                ctx.stroke();
+
+                // DEBUG: Draw the baseline in blue
+                ctx.strokeStyle = 'blue';
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.moveTo(x - 40, bassBaselineY);
+                ctx.lineTo(x + 40, bassBaselineY);
+                ctx.stroke();
+
+                // Draw the clef
+                ctx.fillStyle = '#333';
+                ctx.fillText('\u{1D122}', x, bassBaselineY);
             }
         }
 

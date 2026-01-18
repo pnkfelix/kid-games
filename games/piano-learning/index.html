@@ -2041,6 +2041,9 @@
                 // Draw ledger lines if needed
                 drawLedgerLines(ctx, currentX, y, staffTop, lineSpacing);
 
+                // Draw accidental if needed
+                drawAccidental(ctx, currentX, y, note.note);
+
                 // Draw note
                 drawNote(ctx, currentX, y, note.duration, index);
 
@@ -2050,6 +2053,21 @@
 
                 currentX += noteWidth;
             });
+        }
+
+        // Draw accidental (sharp or flat)
+        function drawAccidental(ctx, x, y, noteName) {
+            ctx.fillStyle = '#333';
+            ctx.font = 'bold 20px serif';
+            ctx.textAlign = 'right';
+
+            if (noteName.includes('#')) {
+                // Draw sharp symbol
+                ctx.fillText('\u266F', x - 12, y + 6);
+            } else if (noteName.includes('b')) {
+                // Draw flat symbol
+                ctx.fillText('\u266D', x - 12, y + 6);
+            }
         }
 
         // Draw clef

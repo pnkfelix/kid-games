@@ -2003,6 +2003,18 @@
                 tempoValue.textContent = gameState.tempo;
             });
             audioToggle.addEventListener('click', toggleAudio);
+
+            // Rebuild piano on orientation/resize change to fix key positioning
+            let resizeTimeout;
+            window.addEventListener('resize', () => {
+                clearTimeout(resizeTimeout);
+                resizeTimeout = setTimeout(() => {
+                    if (gameState.currentSong) {
+                        buildPiano(gameState.currentSong);
+                        updateHighlights();
+                    }
+                }, 150);
+            });
         }
 
         // Toggle audio playback
@@ -2075,7 +2087,9 @@
             gameState.pianoKeys = {};
 
             let whiteKeyIndex = 0;
-            const whiteKeyWidth = 52; // 50px + 2px margin
+            // Detect mobile mode and use appropriate key width
+            const isMobile = window.innerWidth <= 600;
+            const whiteKeyWidth = isMobile ? 38 : 52; // 36px + 2px margin for mobile, 50px + 2px for desktop
 
             for (let midi = startMidi; midi <= endMidi; midi++) {
                 const noteIndex = midi % 12;
@@ -2091,8 +2105,8 @@
                     blackKey.dataset.octave = octave;
                     blackKey.dataset.midi = midi;
 
-                    // Position black key
-                    const blackKeyOffset = getBlackKeyOffset(noteIndex);
+                    // Position black key - scale offset for mobile
+                    const blackKeyOffset = getBlackKeyOffset(noteIndex, isMobile);
                     blackKey.style.left = `${(whiteKeyIndex - 1) * whiteKeyWidth + blackKeyOffset}px`;
 
                     const fingerNum = document.createElement('div');
@@ -2125,19 +2139,29 @@
         }
 
         // Get black key horizontal offset
-        function getBlackKeyOffset(noteIndex) {
+        function getBlackKeyOffset(noteIndex, isMobile = false) {
             // Offsets for black keys relative to white key positions
             // Real pianos have non-uniform black key positions:
             // - Group of 2 (C#, D#): C# shifted left, D# shifted right
             // - Group of 3 (F#, G#, A#): F# shifted left, G# centered, A# shifted right
-            const offsets = {
+            // Desktop offsets (for 52px white key width)
+            const desktopOffsets = {
                 1: 30,   // C# - shifted left of C-D boundary
                 3: 40,   // D# - shifted right of D-E boundary
                 6: 30,   // F# - shifted left of F-G boundary
                 8: 35,   // G# - centered at G-A boundary
                 10: 40   // A# - shifted right of A-B boundary
             };
-            return offsets[noteIndex] || 35;
+            // Mobile offsets scaled proportionally (38/52 ≈ 0.73)
+            const mobileOffsets = {
+                1: 22,   // C#
+                3: 29,   // D#
+                6: 22,   // F#
+                8: 26,   // G#
+                10: 29   // A#
+            };
+            const offsets = isMobile ? mobileOffsets : desktopOffsets;
+            return offsets[noteIndex] || (isMobile ? 26 : 35);
         }
 
         // Convert note to MIDI number

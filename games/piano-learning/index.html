@@ -193,6 +193,64 @@
             font-size: 0.9em;
         }
 
+        /* Audio toggle */
+        .audio-toggle {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: rgba(255, 255, 255, 0.15);
+            padding: 8px 15px;
+            border-radius: 20px;
+            cursor: pointer;
+            user-select: none;
+            transition: background 0.3s;
+        }
+
+        .audio-toggle:hover {
+            background: rgba(255, 255, 255, 0.25);
+        }
+
+        .audio-toggle.active {
+            background: rgba(76, 175, 80, 0.4);
+        }
+
+        .audio-toggle-switch {
+            width: 40px;
+            height: 22px;
+            background: rgba(255, 255, 255, 0.3);
+            border-radius: 11px;
+            position: relative;
+            transition: background 0.3s;
+        }
+
+        .audio-toggle.active .audio-toggle-switch {
+            background: #4CAF50;
+        }
+
+        .audio-toggle-switch::after {
+            content: '';
+            position: absolute;
+            width: 18px;
+            height: 18px;
+            background: white;
+            border-radius: 50%;
+            top: 2px;
+            left: 2px;
+            transition: transform 0.3s;
+        }
+
+        .audio-toggle.active .audio-toggle-switch::after {
+            transform: translateX(18px);
+        }
+
+        .audio-toggle-label {
+            font-size: 0.9em;
+        }
+
+        .audio-toggle-icon {
+            font-size: 1.1em;
+        }
+
         /* Score Display */
         .score-container {
             background: #fffef5;
@@ -539,6 +597,11 @@
                     <label>Tempo:</label>
                     <input type="range" id="tempo-slider" min="40" max="120" value="70">
                     <span class="tempo-value" id="tempo-value">70</span>
+                </div>
+                <div class="audio-toggle" id="audio-toggle" title="Toggle audio playback">
+                    <span class="audio-toggle-icon">🔊</span>
+                    <span class="audio-toggle-label">Sound</span>
+                    <div class="audio-toggle-switch"></div>
                 </div>
             </div>
         </div>
@@ -1807,8 +1870,84 @@
             tempo: 70,
             animationId: null,
             lastTime: 0,
-            pianoKeys: {}
+            pianoKeys: {},
+            audioEnabled: false,
+            lastPlayedNoteIndex: -1
         };
+
+        // Audio context and synthesizer
+        let audioContext = null;
+
+        // Initialize audio context (must be called from user interaction)
+        function initAudio() {
+            if (!audioContext) {
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            }
+            if (audioContext.state === 'suspended') {
+                audioContext.resume();
+            }
+        }
+
+        // Convert MIDI note number to frequency
+        function midiToFrequency(midi) {
+            return 440 * Math.pow(2, (midi - 69) / 12);
+        }
+
+        // Play a piano-like note using Web Audio API
+        function playNote(note, octave, duration) {
+            if (!audioContext || !gameState.audioEnabled) return;
+
+            const midi = noteToMidi(note, octave);
+            const frequency = midiToFrequency(midi);
+
+            // Calculate note duration in seconds based on tempo
+            const beatsPerSecond = gameState.tempo / 60;
+            const noteDurationSeconds = Math.min(duration / beatsPerSecond, 2); // Cap at 2 seconds
+
+            // Create oscillators for a richer piano-like sound
+            const oscillator1 = audioContext.createOscillator();
+            const oscillator2 = audioContext.createOscillator();
+            const gainNode = audioContext.createGain();
+            const filterNode = audioContext.createBiquadFilter();
+
+            // Main oscillator (sine wave for fundamental)
+            oscillator1.type = 'sine';
+            oscillator1.frequency.setValueAtTime(frequency, audioContext.currentTime);
+
+            // Second oscillator (triangle for harmonics)
+            oscillator2.type = 'triangle';
+            oscillator2.frequency.setValueAtTime(frequency, audioContext.currentTime);
+
+            // Low-pass filter for warmer sound
+            filterNode.type = 'lowpass';
+            filterNode.frequency.setValueAtTime(2000, audioContext.currentTime);
+            filterNode.Q.setValueAtTime(1, audioContext.currentTime);
+
+            // ADSR envelope for piano-like attack and decay
+            const now = audioContext.currentTime;
+            const attackTime = 0.01;
+            const decayTime = 0.1;
+            const sustainLevel = 0.3;
+            const releaseTime = 0.3;
+
+            gainNode.gain.setValueAtTime(0, now);
+            gainNode.gain.linearRampToValueAtTime(0.4, now + attackTime);
+            gainNode.gain.linearRampToValueAtTime(sustainLevel, now + attackTime + decayTime);
+            gainNode.gain.setValueAtTime(sustainLevel, now + noteDurationSeconds - releaseTime);
+            gainNode.gain.linearRampToValueAtTime(0, now + noteDurationSeconds);
+
+            // Connect the audio graph
+            oscillator1.connect(filterNode);
+            oscillator2.connect(filterNode);
+            filterNode.connect(gainNode);
+            gainNode.connect(audioContext.destination);
+
+            // Start and stop oscillators
+            oscillator1.start(now);
+            oscillator2.start(now);
+            oscillator1.stop(now + noteDurationSeconds);
+            oscillator2.stop(now + noteDurationSeconds);
+        }
 
         // DOM elements
         const screens = {
@@ -1827,6 +1966,7 @@
         const progressFill = document.getElementById('progress-fill');
         const currentSongTitle = document.getElementById('current-song-title');
         const handIndicator = document.getElementById('hand-indicator');
+        const audioToggle = document.getElementById('audio-toggle');
 
         // Initialize
         function init() {
@@ -1862,6 +2002,18 @@
                 gameState.tempo = parseInt(e.target.value);
                 tempoValue.textContent = gameState.tempo;
             });
+            audioToggle.addEventListener('click', toggleAudio);
+        }
+
+        // Toggle audio playback
+        function toggleAudio() {
+            gameState.audioEnabled = !gameState.audioEnabled;
+            audioToggle.classList.toggle('active', gameState.audioEnabled);
+
+            // Initialize audio context on first enable (browser requirement)
+            if (gameState.audioEnabled) {
+                initAudio();
+            }
         }
 
         // Show screen
@@ -1883,6 +2035,7 @@
             gameState.currentBeat = 0;
             gameState.isPlaying = false;
             gameState.tempo = song.tempo;
+            gameState.lastPlayedNoteIndex = -1;
 
             tempoSlider.value = song.tempo;
             tempoValue.textContent = song.tempo;
@@ -2089,7 +2242,15 @@
                 ctx.fillText('\u{1D11E}', x, baselineY);
             } else {
                 // Bass clef (F clef) - using Unicode
-                ctx.fillText('\u{1D122}', x, y - 5);
+                // The two dots of the bass clef should straddle the F line (4th line from bottom)
+                // which is at staffTop + lineSpacing = 75px.
+                // Use smaller font size than treble clef since bass clef glyph renders larger.
+                ctx.font = '90px serif';
+                // The F line is at staffTop + lineSpacing. Offset adjusted empirically
+                // to position the dots around the F line.
+                const fLineY = staffTop + lineSpacing;
+                const bassOffset = 50;
+                ctx.fillText('\u{1D122}', x, fLineY + bassOffset);
             }
         }
 
@@ -2330,12 +2491,29 @@
         function restart() {
             stopPlayback();
             gameState.currentBeat = 0;
+            gameState.lastPlayedNoteIndex = -1;
             drawCursor();  // This also renders the score
             updateHighlights();
             progressFill.style.width = '0%';
 
             // Reset scroll
             document.querySelector('.score-container').scrollLeft = 0;
+        }
+
+        // Get current note index based on beat position
+        function getCurrentNoteIndex() {
+            const song = gameState.currentSong;
+            if (!song) return -1;
+
+            let beatSum = 0;
+            for (let i = 0; i < song.notes.length; i++) {
+                const note = song.notes[i];
+                if (beatSum <= gameState.currentBeat && gameState.currentBeat < beatSum + note.duration) {
+                    return i;
+                }
+                beatSum += note.duration;
+            }
+            return song.notes.length - 1;
         }
 
         // Animation loop
@@ -2357,6 +2535,16 @@
                 updateHighlights();
                 drawCursor();
                 return;
+            }
+
+            // Check for note change and play audio
+            const currentNoteIndex = getCurrentNoteIndex();
+            if (gameState.audioEnabled && currentNoteIndex !== gameState.lastPlayedNoteIndex) {
+                const note = gameState.currentSong.notes[currentNoteIndex];
+                if (note) {
+                    playNote(note.note, note.octave, note.duration);
+                }
+                gameState.lastPlayedNoteIndex = currentNoteIndex;
             }
 
             drawCursor();

@@ -1,0 +1,1409 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Piano Learning</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            color: white;
+            overflow-x: hidden;
+        }
+
+        .home-link {
+            position: fixed;
+            top: 15px;
+            left: 15px;
+            color: white;
+            text-decoration: none;
+            padding: 8px 16px;
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 20px;
+            font-size: 14px;
+            backdrop-filter: blur(10px);
+            transition: background 0.3s;
+            z-index: 1000;
+        }
+
+        .home-link:hover {
+            background: rgba(255, 255, 255, 0.3);
+        }
+
+        /* Screens */
+        .screen {
+            display: none;
+            padding: 20px;
+            min-height: 100vh;
+        }
+
+        .screen.active {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        /* Song Selection Screen */
+        #song-select-screen {
+            padding-top: 60px;
+        }
+
+        #song-select-screen h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
+        }
+
+        #song-select-screen .subtitle {
+            font-size: 1.1em;
+            opacity: 0.9;
+            margin-bottom: 30px;
+        }
+
+        .song-list {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 20px;
+            max-width: 900px;
+            width: 100%;
+            padding: 0 20px;
+        }
+
+        .song-card {
+            background: rgba(255, 255, 255, 0.15);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            padding: 20px;
+            cursor: pointer;
+            transition: transform 0.3s, background 0.3s;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .song-card:hover {
+            transform: translateY(-5px);
+            background: rgba(255, 255, 255, 0.25);
+        }
+
+        .song-card h3 {
+            font-size: 1.3em;
+            margin-bottom: 8px;
+        }
+
+        .song-card .song-info {
+            font-size: 0.9em;
+            opacity: 0.8;
+        }
+
+        .song-card .song-difficulty {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 10px;
+            font-size: 0.8em;
+            margin-top: 10px;
+        }
+
+        .song-card .song-difficulty.easy {
+            background: rgba(46, 204, 113, 0.4);
+        }
+
+        .song-card .song-difficulty.medium {
+            background: rgba(241, 196, 15, 0.4);
+        }
+
+        /* Game Screen */
+        #game-screen {
+            padding-top: 50px;
+            justify-content: flex-start;
+        }
+
+        .game-header {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 20px;
+            margin-bottom: 15px;
+            flex-wrap: wrap;
+        }
+
+        .song-title {
+            font-size: 1.5em;
+            font-weight: bold;
+        }
+
+        .controls {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 25px;
+            cursor: pointer;
+            font-size: 1em;
+            transition: transform 0.2s, opacity 0.2s;
+            background: rgba(255, 255, 255, 0.9);
+            color: #333;
+        }
+
+        .btn:hover {
+            transform: scale(1.05);
+        }
+
+        .btn:active {
+            transform: scale(0.95);
+        }
+
+        .btn.primary {
+            background: #4CAF50;
+            color: white;
+        }
+
+        .tempo-control {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: rgba(255, 255, 255, 0.15);
+            padding: 8px 15px;
+            border-radius: 20px;
+        }
+
+        .tempo-control label {
+            font-size: 0.9em;
+        }
+
+        .tempo-control input[type="range"] {
+            width: 100px;
+        }
+
+        .tempo-value {
+            min-width: 45px;
+            text-align: center;
+            font-size: 0.9em;
+        }
+
+        /* Score Display */
+        .score-container {
+            background: #fffef5;
+            border-radius: 10px;
+            padding: 20px;
+            margin: 10px 0;
+            width: 100%;
+            max-width: 900px;
+            overflow-x: auto;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+        }
+
+        #score-canvas {
+            display: block;
+            margin: 0 auto;
+        }
+
+        /* Piano Container */
+        .piano-container {
+            background: linear-gradient(180deg, #2c2c2c 0%, #1a1a1a 100%);
+            border-radius: 10px;
+            padding: 20px 20px 30px;
+            margin-top: 15px;
+            box-shadow: 0 8px 25px rgba(0,0,0,0.3);
+            width: 100%;
+            max-width: 900px;
+            overflow-x: auto;
+        }
+
+        .piano {
+            display: flex;
+            position: relative;
+            justify-content: center;
+            min-width: fit-content;
+            margin: 0 auto;
+        }
+
+        .white-key {
+            width: 50px;
+            height: 180px;
+            background: linear-gradient(180deg, #f8f8f8 0%, #e8e8e8 100%);
+            border: 1px solid #999;
+            border-radius: 0 0 6px 6px;
+            margin: 0 1px;
+            cursor: pointer;
+            position: relative;
+            transition: background 0.15s;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: flex-end;
+            padding-bottom: 10px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+        }
+
+        .white-key:active,
+        .white-key.pressed {
+            background: linear-gradient(180deg, #e0e0e0 0%, #d0d0d0 100%);
+        }
+
+        .white-key.highlight {
+            background: linear-gradient(180deg, #90EE90 0%, #7CCD7C 100%);
+        }
+
+        .white-key .note-name {
+            font-size: 12px;
+            color: #666;
+            margin-bottom: 5px;
+        }
+
+        .white-key .finger-number {
+            width: 28px;
+            height: 28px;
+            background: #e74c3c;
+            color: white;
+            border-radius: 50%;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            font-size: 16px;
+            font-weight: bold;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+        }
+
+        .white-key.highlight .finger-number {
+            display: flex;
+        }
+
+        .black-key {
+            width: 34px;
+            height: 110px;
+            background: linear-gradient(180deg, #333 0%, #111 100%);
+            border-radius: 0 0 4px 4px;
+            position: absolute;
+            top: 0;
+            cursor: pointer;
+            z-index: 10;
+            transition: background 0.15s;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: flex-end;
+            padding-bottom: 8px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.4);
+        }
+
+        .black-key:active,
+        .black-key.pressed {
+            background: linear-gradient(180deg, #222 0%, #000 100%);
+            height: 108px;
+        }
+
+        .black-key.highlight {
+            background: linear-gradient(180deg, #228B22 0%, #1a6b1a 100%);
+        }
+
+        .black-key .finger-number {
+            width: 22px;
+            height: 22px;
+            background: #e74c3c;
+            color: white;
+            border-radius: 50%;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            font-weight: bold;
+        }
+
+        .black-key.highlight .finger-number {
+            display: flex;
+        }
+
+        /* Hand indicator */
+        .hand-indicator {
+            text-align: center;
+            padding: 8px;
+            font-size: 0.95em;
+            opacity: 0.9;
+        }
+
+        /* Legend */
+        .legend {
+            display: flex;
+            gap: 20px;
+            margin-top: 15px;
+            justify-content: center;
+            flex-wrap: wrap;
+            font-size: 0.9em;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .legend-color {
+            width: 20px;
+            height: 20px;
+            border-radius: 4px;
+        }
+
+        .legend-color.highlight {
+            background: #90EE90;
+            border: 1px solid #7CCD7C;
+        }
+
+        .legend-finger {
+            width: 20px;
+            height: 20px;
+            background: #e74c3c;
+            color: white;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            font-weight: bold;
+        }
+
+        /* Progress bar */
+        .progress-container {
+            width: 100%;
+            max-width: 900px;
+            margin-top: 15px;
+        }
+
+        .progress-bar {
+            height: 8px;
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: #4CAF50;
+            width: 0%;
+            transition: width 0.1s;
+        }
+
+        /* Finger guide */
+        .finger-guide {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+            padding: 15px 20px;
+            margin-top: 15px;
+            text-align: center;
+            max-width: 500px;
+        }
+
+        .finger-guide h4 {
+            margin-bottom: 10px;
+            font-size: 1em;
+        }
+
+        .finger-diagram {
+            display: flex;
+            justify-content: center;
+            gap: 5px;
+        }
+
+        .finger {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .finger-circle {
+            width: 30px;
+            height: 30px;
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+        }
+
+        .finger-label {
+            font-size: 0.7em;
+            opacity: 0.8;
+        }
+
+        /* Responsive */
+        @media (max-width: 600px) {
+            #song-select-screen h1 {
+                font-size: 1.8em;
+            }
+
+            .song-list {
+                grid-template-columns: 1fr;
+            }
+
+            .white-key {
+                width: 36px;
+                height: 140px;
+            }
+
+            .black-key {
+                width: 24px;
+                height: 85px;
+            }
+
+            .game-header {
+                flex-direction: column;
+                gap: 10px;
+            }
+
+            .controls {
+                width: 100%;
+                justify-content: center;
+            }
+
+            .score-container {
+                padding: 10px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <a href="../../" class="home-link">Home</a>
+
+    <!-- Song Selection Screen -->
+    <div id="song-select-screen" class="screen active">
+        <h1>Piano Learning</h1>
+        <p class="subtitle">Learn to play simple melodies with finger guidance</p>
+        <div class="song-list" id="song-list">
+            <!-- Songs will be populated by JavaScript -->
+        </div>
+        <div class="finger-guide">
+            <h4>Finger Numbers</h4>
+            <div class="finger-diagram">
+                <div class="finger">
+                    <div class="finger-circle">5</div>
+                    <span class="finger-label">Pinky</span>
+                </div>
+                <div class="finger">
+                    <div class="finger-circle">4</div>
+                    <span class="finger-label">Ring</span>
+                </div>
+                <div class="finger">
+                    <div class="finger-circle">3</div>
+                    <span class="finger-label">Middle</span>
+                </div>
+                <div class="finger">
+                    <div class="finger-circle">2</div>
+                    <span class="finger-label">Index</span>
+                </div>
+                <div class="finger">
+                    <div class="finger-circle">1</div>
+                    <span class="finger-label">Thumb</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Game Screen -->
+    <div id="game-screen" class="screen">
+        <div class="game-header">
+            <span class="song-title" id="current-song-title"></span>
+            <div class="controls">
+                <button class="btn" id="back-btn">Back</button>
+                <button class="btn primary" id="play-btn">Play</button>
+                <button class="btn" id="restart-btn">Restart</button>
+                <div class="tempo-control">
+                    <label>Tempo:</label>
+                    <input type="range" id="tempo-slider" min="40" max="120" value="70">
+                    <span class="tempo-value" id="tempo-value">70</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="score-container">
+            <canvas id="score-canvas"></canvas>
+        </div>
+
+        <div class="hand-indicator" id="hand-indicator"></div>
+
+        <div class="piano-container">
+            <div class="piano" id="piano">
+                <!-- Piano keys will be generated by JavaScript -->
+            </div>
+        </div>
+
+        <div class="progress-container">
+            <div class="progress-bar">
+                <div class="progress-fill" id="progress-fill"></div>
+            </div>
+        </div>
+
+        <div class="legend">
+            <div class="legend-item">
+                <div class="legend-color highlight"></div>
+                <span>Key to press</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-finger">3</div>
+                <span>Finger number</span>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Note frequencies and names
+        const noteNames = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+
+        // Songs database - each note has: note name, octave, duration (in beats), finger number
+        const songs = [
+            {
+                id: 1,
+                title: "Mary Had a Little Lamb",
+                composer: "Traditional",
+                difficulty: "easy",
+                hand: "right",
+                clef: "treble",
+                timeSignature: { top: 4, bottom: 4 },
+                keySignature: "C",
+                tempo: 80,
+                // Starting position for right hand: thumb on E4
+                notes: [
+                    // "Ma-ry had a lit-tle lamb"
+                    { note: 'E', octave: 4, duration: 1, finger: 3 },
+                    { note: 'D', octave: 4, duration: 1, finger: 2 },
+                    { note: 'C', octave: 4, duration: 1, finger: 1 },
+                    { note: 'D', octave: 4, duration: 1, finger: 2 },
+                    { note: 'E', octave: 4, duration: 1, finger: 3 },
+                    { note: 'E', octave: 4, duration: 1, finger: 3 },
+                    { note: 'E', octave: 4, duration: 2, finger: 3 },
+                    // "lit-tle lamb, lit-tle lamb"
+                    { note: 'D', octave: 4, duration: 1, finger: 2 },
+                    { note: 'D', octave: 4, duration: 1, finger: 2 },
+                    { note: 'D', octave: 4, duration: 2, finger: 2 },
+                    { note: 'E', octave: 4, duration: 1, finger: 3 },
+                    { note: 'G', octave: 4, duration: 1, finger: 5 },
+                    { note: 'G', octave: 4, duration: 2, finger: 5 },
+                    // "Ma-ry had a lit-tle lamb"
+                    { note: 'E', octave: 4, duration: 1, finger: 3 },
+                    { note: 'D', octave: 4, duration: 1, finger: 2 },
+                    { note: 'C', octave: 4, duration: 1, finger: 1 },
+                    { note: 'D', octave: 4, duration: 1, finger: 2 },
+                    { note: 'E', octave: 4, duration: 1, finger: 3 },
+                    { note: 'E', octave: 4, duration: 1, finger: 3 },
+                    { note: 'E', octave: 4, duration: 1, finger: 3 },
+                    { note: 'E', octave: 4, duration: 1, finger: 3 },
+                    // "fleece was white as snow"
+                    { note: 'D', octave: 4, duration: 1, finger: 2 },
+                    { note: 'D', octave: 4, duration: 1, finger: 2 },
+                    { note: 'E', octave: 4, duration: 1, finger: 3 },
+                    { note: 'D', octave: 4, duration: 1, finger: 2 },
+                    { note: 'C', octave: 4, duration: 4, finger: 1 }
+                ]
+            },
+            {
+                id: 2,
+                title: "Twinkle Twinkle Little Star",
+                composer: "Traditional",
+                difficulty: "easy",
+                hand: "right",
+                clef: "treble",
+                timeSignature: { top: 4, bottom: 4 },
+                keySignature: "C",
+                tempo: 70,
+                notes: [
+                    // "Twin-kle twin-kle lit-tle star"
+                    { note: 'C', octave: 4, duration: 1, finger: 1 },
+                    { note: 'C', octave: 4, duration: 1, finger: 1 },
+                    { note: 'G', octave: 4, duration: 1, finger: 5 },
+                    { note: 'G', octave: 4, duration: 1, finger: 5 },
+                    { note: 'A', octave: 4, duration: 1, finger: 5 },
+                    { note: 'A', octave: 4, duration: 1, finger: 5 },
+                    { note: 'G', octave: 4, duration: 2, finger: 5 },
+                    // "How I won-der what you are"
+                    { note: 'F', octave: 4, duration: 1, finger: 4 },
+                    { note: 'F', octave: 4, duration: 1, finger: 4 },
+                    { note: 'E', octave: 4, duration: 1, finger: 3 },
+                    { note: 'E', octave: 4, duration: 1, finger: 3 },
+                    { note: 'D', octave: 4, duration: 1, finger: 2 },
+                    { note: 'D', octave: 4, duration: 1, finger: 2 },
+                    { note: 'C', octave: 4, duration: 2, finger: 1 },
+                    // "Up a-bove the world so high"
+                    { note: 'G', octave: 4, duration: 1, finger: 5 },
+                    { note: 'G', octave: 4, duration: 1, finger: 5 },
+                    { note: 'F', octave: 4, duration: 1, finger: 4 },
+                    { note: 'F', octave: 4, duration: 1, finger: 4 },
+                    { note: 'E', octave: 4, duration: 1, finger: 3 },
+                    { note: 'E', octave: 4, duration: 1, finger: 3 },
+                    { note: 'D', octave: 4, duration: 2, finger: 2 },
+                    // "Like a dia-mond in the sky"
+                    { note: 'G', octave: 4, duration: 1, finger: 5 },
+                    { note: 'G', octave: 4, duration: 1, finger: 5 },
+                    { note: 'F', octave: 4, duration: 1, finger: 4 },
+                    { note: 'F', octave: 4, duration: 1, finger: 4 },
+                    { note: 'E', octave: 4, duration: 1, finger: 3 },
+                    { note: 'E', octave: 4, duration: 1, finger: 3 },
+                    { note: 'D', octave: 4, duration: 2, finger: 2 },
+                    // "Twin-kle twin-kle lit-tle star"
+                    { note: 'C', octave: 4, duration: 1, finger: 1 },
+                    { note: 'C', octave: 4, duration: 1, finger: 1 },
+                    { note: 'G', octave: 4, duration: 1, finger: 5 },
+                    { note: 'G', octave: 4, duration: 1, finger: 5 },
+                    { note: 'A', octave: 4, duration: 1, finger: 5 },
+                    { note: 'A', octave: 4, duration: 1, finger: 5 },
+                    { note: 'G', octave: 4, duration: 2, finger: 5 },
+                    // "How I won-der what you are"
+                    { note: 'F', octave: 4, duration: 1, finger: 4 },
+                    { note: 'F', octave: 4, duration: 1, finger: 4 },
+                    { note: 'E', octave: 4, duration: 1, finger: 3 },
+                    { note: 'E', octave: 4, duration: 1, finger: 3 },
+                    { note: 'D', octave: 4, duration: 1, finger: 2 },
+                    { note: 'D', octave: 4, duration: 1, finger: 2 },
+                    { note: 'C', octave: 4, duration: 2, finger: 1 }
+                ]
+            },
+            {
+                id: 3,
+                title: "Hot Cross Buns",
+                composer: "Traditional",
+                difficulty: "easy",
+                hand: "right",
+                clef: "treble",
+                timeSignature: { top: 4, bottom: 4 },
+                keySignature: "C",
+                tempo: 90,
+                notes: [
+                    // "Hot cross buns"
+                    { note: 'E', octave: 4, duration: 1, finger: 3 },
+                    { note: 'D', octave: 4, duration: 1, finger: 2 },
+                    { note: 'C', octave: 4, duration: 2, finger: 1 },
+                    // "Hot cross buns"
+                    { note: 'E', octave: 4, duration: 1, finger: 3 },
+                    { note: 'D', octave: 4, duration: 1, finger: 2 },
+                    { note: 'C', octave: 4, duration: 2, finger: 1 },
+                    // "One a pen-ny, two a pen-ny"
+                    { note: 'C', octave: 4, duration: 0.5, finger: 1 },
+                    { note: 'C', octave: 4, duration: 0.5, finger: 1 },
+                    { note: 'C', octave: 4, duration: 0.5, finger: 1 },
+                    { note: 'C', octave: 4, duration: 0.5, finger: 1 },
+                    { note: 'D', octave: 4, duration: 0.5, finger: 2 },
+                    { note: 'D', octave: 4, duration: 0.5, finger: 2 },
+                    { note: 'D', octave: 4, duration: 0.5, finger: 2 },
+                    { note: 'D', octave: 4, duration: 0.5, finger: 2 },
+                    // "Hot cross buns"
+                    { note: 'E', octave: 4, duration: 1, finger: 3 },
+                    { note: 'D', octave: 4, duration: 1, finger: 2 },
+                    { note: 'C', octave: 4, duration: 2, finger: 1 }
+                ]
+            },
+            {
+                id: 4,
+                title: "Ode to Joy",
+                composer: "Beethoven",
+                difficulty: "easy",
+                hand: "right",
+                clef: "treble",
+                timeSignature: { top: 4, bottom: 4 },
+                keySignature: "C",
+                tempo: 75,
+                notes: [
+                    // First phrase
+                    { note: 'E', octave: 4, duration: 1, finger: 3 },
+                    { note: 'E', octave: 4, duration: 1, finger: 3 },
+                    { note: 'F', octave: 4, duration: 1, finger: 4 },
+                    { note: 'G', octave: 4, duration: 1, finger: 5 },
+                    { note: 'G', octave: 4, duration: 1, finger: 5 },
+                    { note: 'F', octave: 4, duration: 1, finger: 4 },
+                    { note: 'E', octave: 4, duration: 1, finger: 3 },
+                    { note: 'D', octave: 4, duration: 1, finger: 2 },
+                    { note: 'C', octave: 4, duration: 1, finger: 1 },
+                    { note: 'C', octave: 4, duration: 1, finger: 1 },
+                    { note: 'D', octave: 4, duration: 1, finger: 2 },
+                    { note: 'E', octave: 4, duration: 1, finger: 3 },
+                    { note: 'E', octave: 4, duration: 1.5, finger: 3 },
+                    { note: 'D', octave: 4, duration: 0.5, finger: 2 },
+                    { note: 'D', octave: 4, duration: 2, finger: 2 },
+                    // Second phrase
+                    { note: 'E', octave: 4, duration: 1, finger: 3 },
+                    { note: 'E', octave: 4, duration: 1, finger: 3 },
+                    { note: 'F', octave: 4, duration: 1, finger: 4 },
+                    { note: 'G', octave: 4, duration: 1, finger: 5 },
+                    { note: 'G', octave: 4, duration: 1, finger: 5 },
+                    { note: 'F', octave: 4, duration: 1, finger: 4 },
+                    { note: 'E', octave: 4, duration: 1, finger: 3 },
+                    { note: 'D', octave: 4, duration: 1, finger: 2 },
+                    { note: 'C', octave: 4, duration: 1, finger: 1 },
+                    { note: 'C', octave: 4, duration: 1, finger: 1 },
+                    { note: 'D', octave: 4, duration: 1, finger: 2 },
+                    { note: 'E', octave: 4, duration: 1, finger: 3 },
+                    { note: 'D', octave: 4, duration: 1.5, finger: 2 },
+                    { note: 'C', octave: 4, duration: 0.5, finger: 1 },
+                    { note: 'C', octave: 4, duration: 2, finger: 1 }
+                ]
+            },
+            {
+                id: 5,
+                title: "Frère Jacques",
+                composer: "Traditional French",
+                difficulty: "easy",
+                hand: "right",
+                clef: "treble",
+                timeSignature: { top: 4, bottom: 4 },
+                keySignature: "C",
+                tempo: 85,
+                notes: [
+                    // "Frè-re Jac-ques"
+                    { note: 'C', octave: 4, duration: 1, finger: 1 },
+                    { note: 'D', octave: 4, duration: 1, finger: 2 },
+                    { note: 'E', octave: 4, duration: 1, finger: 3 },
+                    { note: 'C', octave: 4, duration: 1, finger: 1 },
+                    // "Frè-re Jac-ques"
+                    { note: 'C', octave: 4, duration: 1, finger: 1 },
+                    { note: 'D', octave: 4, duration: 1, finger: 2 },
+                    { note: 'E', octave: 4, duration: 1, finger: 3 },
+                    { note: 'C', octave: 4, duration: 1, finger: 1 },
+                    // "Dor-mez vous?"
+                    { note: 'E', octave: 4, duration: 1, finger: 3 },
+                    { note: 'F', octave: 4, duration: 1, finger: 4 },
+                    { note: 'G', octave: 4, duration: 2, finger: 5 },
+                    // "Dor-mez vous?"
+                    { note: 'E', octave: 4, duration: 1, finger: 3 },
+                    { note: 'F', octave: 4, duration: 1, finger: 4 },
+                    { note: 'G', octave: 4, duration: 2, finger: 5 },
+                    // "Son-nez les ma-ti-nes"
+                    { note: 'G', octave: 4, duration: 0.5, finger: 5 },
+                    { note: 'A', octave: 4, duration: 0.5, finger: 5 },
+                    { note: 'G', octave: 4, duration: 0.5, finger: 5 },
+                    { note: 'F', octave: 4, duration: 0.5, finger: 4 },
+                    { note: 'E', octave: 4, duration: 1, finger: 3 },
+                    { note: 'C', octave: 4, duration: 1, finger: 1 },
+                    // "Son-nez les ma-ti-nes"
+                    { note: 'G', octave: 4, duration: 0.5, finger: 5 },
+                    { note: 'A', octave: 4, duration: 0.5, finger: 5 },
+                    { note: 'G', octave: 4, duration: 0.5, finger: 5 },
+                    { note: 'F', octave: 4, duration: 0.5, finger: 4 },
+                    { note: 'E', octave: 4, duration: 1, finger: 3 },
+                    { note: 'C', octave: 4, duration: 1, finger: 1 },
+                    // "Din din don"
+                    { note: 'C', octave: 4, duration: 1, finger: 1 },
+                    { note: 'G', octave: 3, duration: 1, finger: 1 },
+                    { note: 'C', octave: 4, duration: 2, finger: 1 },
+                    // "Din din don"
+                    { note: 'C', octave: 4, duration: 1, finger: 1 },
+                    { note: 'G', octave: 3, duration: 1, finger: 1 },
+                    { note: 'C', octave: 4, duration: 2, finger: 1 }
+                ]
+            },
+            {
+                id: 6,
+                title: "London Bridge",
+                composer: "Traditional",
+                difficulty: "easy",
+                hand: "right",
+                clef: "treble",
+                timeSignature: { top: 4, bottom: 4 },
+                keySignature: "C",
+                tempo: 90,
+                notes: [
+                    // "Lon-don Bridge is fall-ing down"
+                    { note: 'G', octave: 4, duration: 1.5, finger: 5 },
+                    { note: 'A', octave: 4, duration: 0.5, finger: 5 },
+                    { note: 'G', octave: 4, duration: 1, finger: 5 },
+                    { note: 'F', octave: 4, duration: 1, finger: 4 },
+                    { note: 'E', octave: 4, duration: 1, finger: 3 },
+                    { note: 'F', octave: 4, duration: 1, finger: 4 },
+                    { note: 'G', octave: 4, duration: 2, finger: 5 },
+                    // "Fall-ing down, fall-ing down"
+                    { note: 'D', octave: 4, duration: 1, finger: 2 },
+                    { note: 'E', octave: 4, duration: 1, finger: 3 },
+                    { note: 'F', octave: 4, duration: 2, finger: 4 },
+                    { note: 'E', octave: 4, duration: 1, finger: 3 },
+                    { note: 'F', octave: 4, duration: 1, finger: 4 },
+                    { note: 'G', octave: 4, duration: 2, finger: 5 },
+                    // "Lon-don Bridge is fall-ing down"
+                    { note: 'G', octave: 4, duration: 1.5, finger: 5 },
+                    { note: 'A', octave: 4, duration: 0.5, finger: 5 },
+                    { note: 'G', octave: 4, duration: 1, finger: 5 },
+                    { note: 'F', octave: 4, duration: 1, finger: 4 },
+                    { note: 'E', octave: 4, duration: 1, finger: 3 },
+                    { note: 'F', octave: 4, duration: 1, finger: 4 },
+                    { note: 'G', octave: 4, duration: 2, finger: 5 },
+                    // "My fair la-dy"
+                    { note: 'D', octave: 4, duration: 2, finger: 2 },
+                    { note: 'G', octave: 4, duration: 1, finger: 5 },
+                    { note: 'E', octave: 4, duration: 1, finger: 3 },
+                    { note: 'C', octave: 4, duration: 4, finger: 1 }
+                ]
+            },
+            {
+                id: 7,
+                title: "Simple Bass Exercise",
+                composer: "Exercise",
+                difficulty: "easy",
+                hand: "left",
+                clef: "bass",
+                timeSignature: { top: 4, bottom: 4 },
+                keySignature: "C",
+                tempo: 65,
+                notes: [
+                    // C major pattern
+                    { note: 'C', octave: 3, duration: 1, finger: 5 },
+                    { note: 'E', octave: 3, duration: 1, finger: 3 },
+                    { note: 'G', octave: 3, duration: 1, finger: 1 },
+                    { note: 'E', octave: 3, duration: 1, finger: 3 },
+                    { note: 'C', octave: 3, duration: 1, finger: 5 },
+                    { note: 'E', octave: 3, duration: 1, finger: 3 },
+                    { note: 'G', octave: 3, duration: 1, finger: 1 },
+                    { note: 'E', octave: 3, duration: 1, finger: 3 },
+                    // G major pattern
+                    { note: 'G', octave: 2, duration: 1, finger: 5 },
+                    { note: 'B', octave: 2, duration: 1, finger: 3 },
+                    { note: 'D', octave: 3, duration: 1, finger: 1 },
+                    { note: 'B', octave: 2, duration: 1, finger: 3 },
+                    { note: 'G', octave: 2, duration: 1, finger: 5 },
+                    { note: 'B', octave: 2, duration: 1, finger: 3 },
+                    { note: 'D', octave: 3, duration: 1, finger: 1 },
+                    { note: 'B', octave: 2, duration: 1, finger: 3 },
+                    // Return to C
+                    { note: 'C', octave: 3, duration: 2, finger: 5 },
+                    { note: 'G', octave: 3, duration: 2, finger: 1 },
+                    { note: 'C', octave: 3, duration: 4, finger: 5 }
+                ]
+            }
+        ];
+
+        // Game state
+        let gameState = {
+            currentSong: null,
+            isPlaying: false,
+            currentBeat: 0,
+            tempo: 70,
+            animationId: null,
+            lastTime: 0,
+            pianoKeys: {}
+        };
+
+        // DOM elements
+        const screens = {
+            songSelect: document.getElementById('song-select-screen'),
+            game: document.getElementById('game-screen')
+        };
+        const songList = document.getElementById('song-list');
+        const piano = document.getElementById('piano');
+        const scoreCanvas = document.getElementById('score-canvas');
+        const ctx = scoreCanvas.getContext('2d');
+        const playBtn = document.getElementById('play-btn');
+        const backBtn = document.getElementById('back-btn');
+        const restartBtn = document.getElementById('restart-btn');
+        const tempoSlider = document.getElementById('tempo-slider');
+        const tempoValue = document.getElementById('tempo-value');
+        const progressFill = document.getElementById('progress-fill');
+        const currentSongTitle = document.getElementById('current-song-title');
+        const handIndicator = document.getElementById('hand-indicator');
+
+        // Initialize
+        function init() {
+            renderSongList();
+            setupEventListeners();
+        }
+
+        // Render song selection list
+        function renderSongList() {
+            songList.innerHTML = songs.map(song => `
+                <div class="song-card" data-song-id="${song.id}">
+                    <h3>${song.title}</h3>
+                    <div class="song-info">${song.composer} • ${song.hand === 'right' ? 'Right Hand' : 'Left Hand'} • ${song.clef === 'treble' ? 'G Clef' : 'F Clef'}</div>
+                    <span class="song-difficulty ${song.difficulty}">${song.difficulty}</span>
+                </div>
+            `).join('');
+
+            // Add click handlers
+            document.querySelectorAll('.song-card').forEach(card => {
+                card.addEventListener('click', () => {
+                    const songId = parseInt(card.dataset.songId);
+                    startGame(songId);
+                });
+            });
+        }
+
+        // Setup event listeners
+        function setupEventListeners() {
+            playBtn.addEventListener('click', togglePlay);
+            backBtn.addEventListener('click', () => showScreen('songSelect'));
+            restartBtn.addEventListener('click', restart);
+            tempoSlider.addEventListener('input', (e) => {
+                gameState.tempo = parseInt(e.target.value);
+                tempoValue.textContent = gameState.tempo;
+            });
+        }
+
+        // Show screen
+        function showScreen(name) {
+            Object.values(screens).forEach(s => s.classList.remove('active'));
+            screens[name].classList.add('active');
+
+            if (name === 'songSelect') {
+                stopPlayback();
+            }
+        }
+
+        // Start game with selected song
+        function startGame(songId) {
+            const song = songs.find(s => s.id === songId);
+            if (!song) return;
+
+            gameState.currentSong = song;
+            gameState.currentBeat = 0;
+            gameState.isPlaying = false;
+            gameState.tempo = song.tempo;
+
+            tempoSlider.value = song.tempo;
+            tempoValue.textContent = song.tempo;
+            currentSongTitle.textContent = song.title;
+            handIndicator.textContent = `${song.hand === 'right' ? 'Right Hand' : 'Left Hand'} - ${song.clef === 'treble' ? 'Treble Clef (G)' : 'Bass Clef (F)'}`;
+
+            playBtn.textContent = 'Play';
+            progressFill.style.width = '0%';
+
+            buildPiano(song);
+            renderScore();
+            updateHighlights();
+            showScreen('game');
+        }
+
+        // Build piano keyboard based on song range
+        function buildPiano(song) {
+            // Determine the range needed
+            let minNote = Infinity;
+            let maxNote = -Infinity;
+
+            song.notes.forEach(n => {
+                const midiNote = noteToMidi(n.note, n.octave);
+                minNote = Math.min(minNote, midiNote);
+                maxNote = Math.max(maxNote, midiNote);
+            });
+
+            // Expand to full octaves and add padding
+            const minOctave = Math.floor((minNote - 1) / 12);
+            const maxOctave = Math.ceil((maxNote + 1) / 12);
+
+            // Start from C of min octave to B of max octave
+            const startMidi = minOctave * 12; // C of starting octave
+            const endMidi = (maxOctave * 12) + 11; // B of ending octave
+
+            piano.innerHTML = '';
+            gameState.pianoKeys = {};
+
+            let whiteKeyIndex = 0;
+            const whiteKeyWidth = 52; // 50px + 2px margin
+
+            for (let midi = startMidi; midi <= endMidi; midi++) {
+                const noteIndex = midi % 12;
+                const octave = Math.floor(midi / 12);
+                const noteName = noteNames[noteIndex];
+                const isBlack = noteName.includes('#');
+                const noteId = `${noteName.replace('#', 's')}${octave}`;
+
+                if (isBlack) {
+                    const blackKey = document.createElement('div');
+                    blackKey.className = 'black-key';
+                    blackKey.dataset.note = noteName;
+                    blackKey.dataset.octave = octave;
+                    blackKey.dataset.midi = midi;
+
+                    // Position black key
+                    const blackKeyOffset = getBlackKeyOffset(noteIndex);
+                    blackKey.style.left = `${(whiteKeyIndex - 1) * whiteKeyWidth + blackKeyOffset}px`;
+
+                    const fingerNum = document.createElement('div');
+                    fingerNum.className = 'finger-number';
+                    blackKey.appendChild(fingerNum);
+
+                    piano.appendChild(blackKey);
+                    gameState.pianoKeys[noteId] = blackKey;
+                } else {
+                    const whiteKey = document.createElement('div');
+                    whiteKey.className = 'white-key';
+                    whiteKey.dataset.note = noteName;
+                    whiteKey.dataset.octave = octave;
+                    whiteKey.dataset.midi = midi;
+
+                    const noteLabel = document.createElement('div');
+                    noteLabel.className = 'note-name';
+                    noteLabel.textContent = `${noteName}${octave}`;
+                    whiteKey.appendChild(noteLabel);
+
+                    const fingerNum = document.createElement('div');
+                    fingerNum.className = 'finger-number';
+                    whiteKey.appendChild(fingerNum);
+
+                    piano.appendChild(whiteKey);
+                    gameState.pianoKeys[noteId] = whiteKey;
+                    whiteKeyIndex++;
+                }
+            }
+        }
+
+        // Get black key horizontal offset
+        function getBlackKeyOffset(noteIndex) {
+            // Offsets for black keys relative to white key positions
+            const offsets = {
+                1: 35,   // C#
+                3: 35,   // D#
+                6: 35,   // F#
+                8: 35,   // G#
+                10: 35   // A#
+            };
+            return offsets[noteIndex] || 35;
+        }
+
+        // Convert note to MIDI number
+        function noteToMidi(note, octave) {
+            const noteIndex = noteNames.indexOf(note);
+            return octave * 12 + noteIndex;
+        }
+
+        // Render musical score
+        function renderScore() {
+            const song = gameState.currentSong;
+            if (!song) return;
+
+            // Calculate total duration
+            const totalBeats = song.notes.reduce((sum, n) => sum + n.duration, 0);
+            const pixelsPerBeat = 40;
+            const scoreWidth = Math.max(850, totalBeats * pixelsPerBeat + 200);
+            const scoreHeight = 200;
+
+            scoreCanvas.width = scoreWidth;
+            scoreCanvas.height = scoreHeight;
+
+            ctx.fillStyle = '#fffef5';
+            ctx.fillRect(0, 0, scoreWidth, scoreHeight);
+
+            const staffTop = 60;
+            const lineSpacing = 15;
+
+            // Draw staff lines
+            ctx.strokeStyle = '#333';
+            ctx.lineWidth = 1;
+            for (let i = 0; i < 5; i++) {
+                ctx.beginPath();
+                ctx.moveTo(50, staffTop + i * lineSpacing);
+                ctx.lineTo(scoreWidth - 30, staffTop + i * lineSpacing);
+                ctx.stroke();
+            }
+
+            // Draw clef
+            drawClef(song.clef, 60, staffTop + 2 * lineSpacing);
+
+            // Draw time signature
+            ctx.fillStyle = '#333';
+            ctx.font = 'bold 24px serif';
+            ctx.textAlign = 'center';
+            ctx.fillText(song.timeSignature.top.toString(), 110, staffTop + 1.5 * lineSpacing);
+            ctx.fillText(song.timeSignature.bottom.toString(), 110, staffTop + 3.5 * lineSpacing);
+
+            // Draw notes
+            const startX = 150;
+            let currentX = startX;
+
+            song.notes.forEach((note, index) => {
+                const y = getNoteY(note.note, note.octave, song.clef, staffTop, lineSpacing);
+                const noteWidth = note.duration * pixelsPerBeat;
+
+                // Draw ledger lines if needed
+                drawLedgerLines(ctx, currentX, y, staffTop, lineSpacing);
+
+                // Draw note
+                drawNote(ctx, currentX, y, note.duration, index);
+
+                // Store note position for cursor tracking
+                note._x = currentX;
+                note._width = noteWidth;
+
+                currentX += noteWidth;
+            });
+        }
+
+        // Draw clef
+        function drawClef(clef, x, y) {
+            ctx.fillStyle = '#333';
+            ctx.font = '70px serif';
+            ctx.textAlign = 'center';
+
+            if (clef === 'treble') {
+                // Treble clef (G clef) - using Unicode
+                ctx.fillText('\u{1D11E}', x, y + 15);
+            } else {
+                // Bass clef (F clef) - using Unicode
+                ctx.fillText('\u{1D122}', x, y - 5);
+            }
+        }
+
+        // Get Y position for a note on the staff
+        function getNoteY(note, octave, clef, staffTop, lineSpacing) {
+            // Note positions relative to middle line (B4 for treble, D3 for bass)
+            const noteOrder = ['C', 'D', 'E', 'F', 'G', 'A', 'B'];
+            const baseNote = note.replace('#', '');
+            const notePosition = noteOrder.indexOf(baseNote);
+
+            if (clef === 'treble') {
+                // Middle line is B4
+                // Each step is half a line spacing
+                const b4Position = staffTop + 2 * lineSpacing;
+                const stepsFromB4 = (octave - 4) * 7 + notePosition - 6; // B is index 6
+                return b4Position - stepsFromB4 * (lineSpacing / 2);
+            } else {
+                // Bass clef: middle line is D3
+                const d3Position = staffTop + 2 * lineSpacing;
+                const stepsFromD3 = (octave - 3) * 7 + notePosition - 1; // D is index 1
+                return d3Position - stepsFromD3 * (lineSpacing / 2);
+            }
+        }
+
+        // Draw ledger lines
+        function drawLedgerLines(ctx, x, y, staffTop, lineSpacing) {
+            const staffBottom = staffTop + 4 * lineSpacing;
+            ctx.strokeStyle = '#333';
+            ctx.lineWidth = 1;
+
+            // Above staff
+            if (y < staffTop) {
+                for (let ly = staffTop - lineSpacing; ly >= y - lineSpacing/2; ly -= lineSpacing) {
+                    ctx.beginPath();
+                    ctx.moveTo(x - 15, ly);
+                    ctx.lineTo(x + 15, ly);
+                    ctx.stroke();
+                }
+            }
+
+            // Below staff
+            if (y > staffBottom) {
+                for (let ly = staffBottom + lineSpacing; ly <= y + lineSpacing/2; ly += lineSpacing) {
+                    ctx.beginPath();
+                    ctx.moveTo(x - 15, ly);
+                    ctx.lineTo(x + 15, ly);
+                    ctx.stroke();
+                }
+            }
+        }
+
+        // Draw a note
+        function drawNote(ctx, x, y, duration, index) {
+            ctx.fillStyle = '#333';
+
+            // Note head
+            ctx.beginPath();
+            ctx.ellipse(x, y, 8, 6, -0.2, 0, Math.PI * 2);
+
+            if (duration >= 2) {
+                // Half note or whole note - hollow
+                ctx.strokeStyle = '#333';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+            } else {
+                ctx.fill();
+            }
+
+            // Stem (not for whole notes)
+            if (duration < 4) {
+                ctx.beginPath();
+                ctx.lineWidth = 2;
+                if (y > 90) {
+                    // Stem up
+                    ctx.moveTo(x + 7, y);
+                    ctx.lineTo(x + 7, y - 35);
+                } else {
+                    // Stem down
+                    ctx.moveTo(x - 7, y);
+                    ctx.lineTo(x - 7, y + 35);
+                }
+                ctx.stroke();
+
+                // Flag for eighth notes
+                if (duration <= 0.5) {
+                    ctx.beginPath();
+                    if (y > 90) {
+                        ctx.moveTo(x + 7, y - 35);
+                        ctx.quadraticCurveTo(x + 20, y - 25, x + 12, y - 15);
+                    } else {
+                        ctx.moveTo(x - 7, y + 35);
+                        ctx.quadraticCurveTo(x - 20, y + 25, x - 12, y + 15);
+                    }
+                    ctx.stroke();
+                }
+            }
+
+            // Dot for dotted notes
+            if (duration === 1.5 || duration === 0.75) {
+                ctx.beginPath();
+                ctx.arc(x + 15, y, 3, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+
+        // Draw playback cursor
+        function drawCursor() {
+            const song = gameState.currentSong;
+            if (!song) return;
+
+            // Find current note based on beat position
+            let beatSum = 0;
+            let currentNoteIndex = 0;
+
+            for (let i = 0; i < song.notes.length; i++) {
+                if (beatSum + song.notes[i].duration > gameState.currentBeat) {
+                    currentNoteIndex = i;
+                    break;
+                }
+                beatSum += song.notes[i].duration;
+                if (i === song.notes.length - 1) {
+                    currentNoteIndex = i;
+                }
+            }
+
+            const note = song.notes[currentNoteIndex];
+            if (!note || !note._x) return;
+
+            // Calculate cursor X position within the note
+            const noteProgress = (gameState.currentBeat - beatSum) / note.duration;
+            const cursorX = note._x + noteProgress * note._width;
+
+            // Redraw score and add cursor
+            renderScore();
+
+            // Draw cursor line
+            ctx.strokeStyle = '#e74c3c';
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.moveTo(cursorX, 30);
+            ctx.lineTo(cursorX, 170);
+            ctx.stroke();
+
+            // Scroll canvas container to keep cursor visible
+            const container = document.querySelector('.score-container');
+            const scrollPos = cursorX - container.clientWidth / 2;
+            container.scrollLeft = Math.max(0, scrollPos);
+        }
+
+        // Update piano key highlights
+        function updateHighlights() {
+            const song = gameState.currentSong;
+            if (!song) return;
+
+            // Clear all highlights
+            Object.values(gameState.pianoKeys).forEach(key => {
+                key.classList.remove('highlight');
+                const fingerNum = key.querySelector('.finger-number');
+                if (fingerNum) fingerNum.textContent = '';
+            });
+
+            // Find current note
+            let beatSum = 0;
+            let currentNote = null;
+
+            for (const note of song.notes) {
+                if (beatSum <= gameState.currentBeat && gameState.currentBeat < beatSum + note.duration) {
+                    currentNote = note;
+                    break;
+                }
+                beatSum += note.duration;
+            }
+
+            // Highlight current note's key
+            if (currentNote) {
+                const noteId = `${currentNote.note.replace('#', 's')}${currentNote.octave}`;
+                const key = gameState.pianoKeys[noteId];
+                if (key) {
+                    key.classList.add('highlight');
+                    const fingerNum = key.querySelector('.finger-number');
+                    if (fingerNum) {
+                        fingerNum.textContent = currentNote.finger;
+                    }
+                }
+            }
+
+            // Update progress bar
+            const totalBeats = song.notes.reduce((sum, n) => sum + n.duration, 0);
+            const progress = (gameState.currentBeat / totalBeats) * 100;
+            progressFill.style.width = `${Math.min(100, progress)}%`;
+        }
+
+        // Toggle playback
+        function togglePlay() {
+            if (gameState.isPlaying) {
+                stopPlayback();
+            } else {
+                startPlayback();
+            }
+        }
+
+        // Start playback
+        function startPlayback() {
+            gameState.isPlaying = true;
+            playBtn.textContent = 'Pause';
+            gameState.lastTime = performance.now();
+            animate();
+        }
+
+        // Stop playback
+        function stopPlayback() {
+            gameState.isPlaying = false;
+            playBtn.textContent = 'Play';
+            if (gameState.animationId) {
+                cancelAnimationFrame(gameState.animationId);
+                gameState.animationId = null;
+            }
+        }
+
+        // Restart
+        function restart() {
+            stopPlayback();
+            gameState.currentBeat = 0;
+            renderScore();
+            updateHighlights();
+            progressFill.style.width = '0%';
+
+            // Reset scroll
+            document.querySelector('.score-container').scrollLeft = 0;
+        }
+
+        // Animation loop
+        function animate(currentTime) {
+            if (!gameState.isPlaying) return;
+
+            const deltaTime = (currentTime - gameState.lastTime) / 1000; // in seconds
+            gameState.lastTime = currentTime;
+
+            // Calculate beats per second from tempo (BPM)
+            const beatsPerSecond = gameState.tempo / 60;
+            gameState.currentBeat += deltaTime * beatsPerSecond;
+
+            // Check if song is finished
+            const totalBeats = gameState.currentSong.notes.reduce((sum, n) => sum + n.duration, 0);
+            if (gameState.currentBeat >= totalBeats) {
+                gameState.currentBeat = totalBeats;
+                stopPlayback();
+                updateHighlights();
+                drawCursor();
+                return;
+            }
+
+            drawCursor();
+            updateHighlights();
+
+            gameState.animationId = requestAnimationFrame(animate);
+        }
+
+        // Start the app
+        init();
+    </script>
+</body>
+</html>

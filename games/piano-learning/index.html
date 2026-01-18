@@ -1154,17 +1154,17 @@
         // Draw clef
         function drawClef(clef, x, y, staffTop, lineSpacing) {
             ctx.fillStyle = '#333';
-            ctx.font = '70px serif';
+            ctx.font = '100px serif';
             ctx.textAlign = 'center';
 
             if (clef === 'treble') {
                 // Treble clef (G clef) - using Unicode
                 // The curl of the G clef should wrap around the G line (2nd line from bottom)
                 // which is at staffTop + 3 * lineSpacing = 105px.
-                // The curl is positioned ~15px above the baseline in the glyph.
-                // To position curl at 105px: baseline must be at 120px.
-                // Reference point y = 90px (middle line), so offset = 120 - 90 = 30.
-                const offset = 30;
+                // At 100px font, the curl is ~21px above the baseline in the glyph.
+                // To position curl at 105px: baseline must be at 126px.
+                // Reference point y = 90px (middle line), so offset = 126 - 90 = 36.
+                const offset = 36;
                 const baselineY = y + offset;
 
                 // DEBUG: Draw the G line (2nd from bottom) in red

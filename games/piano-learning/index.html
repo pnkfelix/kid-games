@@ -1167,32 +1167,6 @@
                 const offset = 45;
                 const baselineY = y + offset;
 
-                // DEBUG: Draw the G line (2nd from bottom) in red
-                const gLineY = staffTop + 3 * lineSpacing;
-                ctx.strokeStyle = 'red';
-                ctx.lineWidth = 2;
-                ctx.beginPath();
-                ctx.moveTo(x - 40, gLineY);
-                ctx.lineTo(x + 40, gLineY);
-                ctx.stroke();
-
-                // DEBUG: Draw the bottom line in orange
-                const bottomLineY = staffTop + 4 * lineSpacing;
-                ctx.strokeStyle = 'orange';
-                ctx.lineWidth = 2;
-                ctx.beginPath();
-                ctx.moveTo(x - 40, bottomLineY);
-                ctx.lineTo(x + 40, bottomLineY);
-                ctx.stroke();
-
-                // DEBUG: Draw the baseline in blue
-                ctx.strokeStyle = 'blue';
-                ctx.lineWidth = 1;
-                ctx.beginPath();
-                ctx.moveTo(x - 40, baselineY);
-                ctx.lineTo(x + 40, baselineY);
-                ctx.stroke();
-
                 // Draw the clef
                 ctx.fillStyle = '#333';
                 ctx.fillText('\u{1D11E}', x, baselineY);

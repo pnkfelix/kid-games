@@ -1120,7 +1120,7 @@
             }
 
             // Draw clef
-            drawClef(song.clef, 60, staffTop + 2 * lineSpacing);
+            drawClef(song.clef, 60, staffTop + 2 * lineSpacing, staffTop, lineSpacing);
 
             // Draw time signature
             ctx.fillStyle = '#333';
@@ -1152,7 +1152,7 @@
         }
 
         // Draw clef
-        function drawClef(clef, x, y) {
+        function drawClef(clef, x, y, staffTop, lineSpacing) {
             ctx.fillStyle = '#333';
             ctx.font = '70px serif';
             ctx.textAlign = 'center';

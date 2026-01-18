@@ -2093,7 +2093,9 @@
 
             for (let midi = startMidi; midi <= endMidi; midi++) {
                 const noteIndex = midi % 12;
-                const octave = Math.floor(midi / 12);
+                // Convert MIDI note to display octave (MIDI standard: C4 = 60)
+                // Since noteToMidi uses (octave + 1) * 12, we reverse with - 1
+                const octave = Math.floor(midi / 12) - 1;
                 const noteName = noteNames[noteIndex];
                 const isBlack = noteName.includes('#');
                 const noteId = `${noteName.replace('#', 's')}${octave}`;

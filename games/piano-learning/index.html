@@ -251,6 +251,119 @@
             font-size: 1.1em;
         }
 
+        /* Mode toggle (tempo vs listen) */
+        .mode-toggle {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: rgba(255, 255, 255, 0.15);
+            padding: 8px 15px;
+            border-radius: 20px;
+            cursor: pointer;
+            user-select: none;
+            transition: background 0.3s;
+        }
+
+        .mode-toggle:hover {
+            background: rgba(255, 255, 255, 0.25);
+        }
+
+        .mode-toggle.listen-mode {
+            background: rgba(156, 39, 176, 0.4);
+        }
+
+        .mode-toggle-switch {
+            width: 40px;
+            height: 22px;
+            background: rgba(255, 255, 255, 0.3);
+            border-radius: 11px;
+            position: relative;
+            transition: background 0.3s;
+        }
+
+        .mode-toggle.listen-mode .mode-toggle-switch {
+            background: #9C27B0;
+        }
+
+        .mode-toggle-switch::after {
+            content: '';
+            position: absolute;
+            width: 18px;
+            height: 18px;
+            background: white;
+            border-radius: 50%;
+            top: 2px;
+            left: 2px;
+            transition: transform 0.3s;
+        }
+
+        .mode-toggle.listen-mode .mode-toggle-switch::after {
+            transform: translateX(18px);
+        }
+
+        .mode-toggle-label {
+            font-size: 0.9em;
+        }
+
+        .mode-toggle-icon {
+            font-size: 1.1em;
+        }
+
+        /* Pitch indicator */
+        .pitch-indicator {
+            display: none;
+            align-items: center;
+            gap: 10px;
+            background: rgba(255, 255, 255, 0.15);
+            padding: 8px 15px;
+            border-radius: 20px;
+            font-size: 0.9em;
+        }
+
+        .pitch-indicator.active {
+            display: flex;
+        }
+
+        .pitch-indicator .detected-note {
+            font-weight: bold;
+            min-width: 50px;
+            text-align: center;
+            padding: 4px 8px;
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 10px;
+        }
+
+        .pitch-indicator .detected-note.correct {
+            background: rgba(76, 175, 80, 0.5);
+        }
+
+        .pitch-indicator .detected-note.incorrect {
+            background: rgba(244, 67, 54, 0.3);
+        }
+
+        .mic-status {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .mic-status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #aaa;
+        }
+
+        .mic-status-dot.listening {
+            background: #4CAF50;
+            animation: pulse 1.5s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
         /* Score Display */
         .score-container {
             background: #fffef5;
@@ -602,6 +715,19 @@
                     <span class="audio-toggle-icon">🔊</span>
                     <span class="audio-toggle-label">Sound</span>
                     <div class="audio-toggle-switch"></div>
+                </div>
+                <div class="mode-toggle" id="mode-toggle" title="Toggle between tempo and listen mode">
+                    <span class="mode-toggle-icon">🎤</span>
+                    <span class="mode-toggle-label">Listen</span>
+                    <div class="mode-toggle-switch"></div>
+                </div>
+                <div class="pitch-indicator" id="pitch-indicator">
+                    <div class="mic-status">
+                        <span class="mic-status-dot" id="mic-status-dot"></span>
+                        <span>Mic</span>
+                    </div>
+                    <span>Heard:</span>
+                    <span class="detected-note" id="detected-note">--</span>
                 </div>
             </div>
         </div>
@@ -1037,7 +1163,18 @@
             lastTime: 0,
             pianoKeys: {},
             audioEnabled: false,
-            lastPlayedNoteIndex: -1
+            lastPlayedNoteIndex: -1,
+            // Pitch detection mode
+            listenMode: false,
+            micStream: null,
+            analyserNode: null,
+            micSourceNode: null,
+            detectedPitch: null,
+            detectedNote: null,
+            currentNoteIndex: 0,
+            noteHeldTime: 0,
+            requiredHoldTime: 150, // ms to hold correct note before advancing
+            lastDetectionTime: 0
         };
 
         // Audio context and synthesizer
@@ -1132,6 +1269,11 @@
         const currentSongTitle = document.getElementById('current-song-title');
         const handIndicator = document.getElementById('hand-indicator');
         const audioToggle = document.getElementById('audio-toggle');
+        const modeToggle = document.getElementById('mode-toggle');
+        const pitchIndicator = document.getElementById('pitch-indicator');
+        const detectedNoteDisplay = document.getElementById('detected-note');
+        const micStatusDot = document.getElementById('mic-status-dot');
+        const tempoControl = document.querySelector('.tempo-control');
 
         // Initialize
         function init() {
@@ -1168,6 +1310,7 @@
                 tempoValue.textContent = gameState.tempo;
             });
             audioToggle.addEventListener('click', toggleAudio);
+            modeToggle.addEventListener('click', toggleListenMode);
 
             // Rebuild piano on orientation/resize change to fix key positioning
             let resizeTimeout;
@@ -1193,6 +1336,212 @@
             }
         }
 
+        // Toggle listen mode (pitch detection)
+        async function toggleListenMode() {
+            if (!gameState.listenMode) {
+                // Enable listen mode
+                try {
+                    await startPitchDetection();
+                    gameState.listenMode = true;
+                    modeToggle.classList.add('listen-mode');
+                    pitchIndicator.classList.add('active');
+                    micStatusDot.classList.add('listening');
+                    tempoControl.style.display = 'none';
+
+                    // Reset to beginning when switching to listen mode
+                    if (gameState.isPlaying) {
+                        stopPlayback();
+                    }
+                    gameState.currentNoteIndex = 0;
+                    gameState.currentBeat = 0;
+                    gameState.lastDetectionTime = 0;
+                    drawCursor();
+                    updateHighlights();
+                } catch (err) {
+                    console.error('Failed to start pitch detection:', err);
+                    alert('Could not access microphone. Please allow microphone access to use listen mode.');
+                }
+            } else {
+                // Disable listen mode
+                stopPitchDetection();
+                gameState.listenMode = false;
+                modeToggle.classList.remove('listen-mode');
+                pitchIndicator.classList.remove('active');
+                micStatusDot.classList.remove('listening');
+                tempoControl.style.display = 'flex';
+                detectedNoteDisplay.textContent = '--';
+                detectedNoteDisplay.classList.remove('correct', 'incorrect');
+            }
+        }
+
+        // Start pitch detection
+        async function startPitchDetection() {
+            // Initialize audio context if needed
+            initAudio();
+
+            // Request microphone access
+            const stream = await navigator.mediaDevices.getUserMedia({
+                audio: {
+                    echoCancellation: false,
+                    noiseSuppression: false,
+                    autoGainControl: false
+                }
+            });
+
+            gameState.micStream = stream;
+
+            // Create analyser node for pitch detection
+            gameState.analyserNode = audioContext.createAnalyser();
+            gameState.analyserNode.fftSize = 4096;
+            gameState.analyserNode.smoothingTimeConstant = 0.8;
+
+            // Connect microphone to analyser (but not to output to prevent feedback)
+            gameState.micSourceNode = audioContext.createMediaStreamSource(stream);
+            gameState.micSourceNode.connect(gameState.analyserNode);
+        }
+
+        // Stop pitch detection
+        function stopPitchDetection() {
+            if (gameState.micStream) {
+                gameState.micStream.getTracks().forEach(track => track.stop());
+                gameState.micStream = null;
+            }
+            if (gameState.micSourceNode) {
+                gameState.micSourceNode.disconnect();
+                gameState.micSourceNode = null;
+            }
+            gameState.analyserNode = null;
+            gameState.detectedPitch = null;
+            gameState.detectedNote = null;
+        }
+
+        // Detect pitch using autocorrelation
+        function detectPitch() {
+            if (!gameState.analyserNode) return null;
+
+            const bufferLength = gameState.analyserNode.fftSize;
+            const buffer = new Float32Array(bufferLength);
+            gameState.analyserNode.getFloatTimeDomainData(buffer);
+
+            // Check if there's enough signal
+            let rms = 0;
+            for (let i = 0; i < bufferLength; i++) {
+                rms += buffer[i] * buffer[i];
+            }
+            rms = Math.sqrt(rms / bufferLength);
+
+            // If signal is too quiet, return null
+            if (rms < 0.01) return null;
+
+            // Autocorrelation pitch detection
+            const sampleRate = audioContext.sampleRate;
+            const minFreq = 60;  // Lowest note we care about (~B1)
+            const maxFreq = 1500; // Highest note (~F#6)
+            const minPeriod = Math.floor(sampleRate / maxFreq);
+            const maxPeriod = Math.floor(sampleRate / minFreq);
+
+            let bestCorrelation = 0;
+            let bestPeriod = 0;
+
+            // Find the period with the highest autocorrelation
+            for (let period = minPeriod; period <= maxPeriod; period++) {
+                let correlation = 0;
+                for (let i = 0; i < bufferLength - period; i++) {
+                    correlation += buffer[i] * buffer[i + period];
+                }
+
+                // Normalize by the number of samples
+                correlation = correlation / (bufferLength - period);
+
+                if (correlation > bestCorrelation) {
+                    bestCorrelation = correlation;
+                    bestPeriod = period;
+                }
+            }
+
+            // Require a minimum correlation threshold
+            if (bestCorrelation < 0.01 || bestPeriod === 0) return null;
+
+            // Refine the period using parabolic interpolation
+            if (bestPeriod > minPeriod && bestPeriod < maxPeriod) {
+                const correlationPrev = calculateCorrelation(buffer, bestPeriod - 1);
+                const correlationNext = calculateCorrelation(buffer, bestPeriod + 1);
+                const correlationCurrent = bestCorrelation;
+
+                const shift = (correlationPrev - correlationNext) /
+                             (2 * (correlationPrev - 2 * correlationCurrent + correlationNext));
+
+                if (Math.abs(shift) < 1) {
+                    bestPeriod = bestPeriod + shift;
+                }
+            }
+
+            const frequency = sampleRate / bestPeriod;
+            return frequency;
+        }
+
+        // Helper function to calculate correlation for a given period
+        function calculateCorrelation(buffer, period) {
+            let correlation = 0;
+            const bufferLength = buffer.length;
+            for (let i = 0; i < bufferLength - period; i++) {
+                correlation += buffer[i] * buffer[i + period];
+            }
+            return correlation / (bufferLength - period);
+        }
+
+        // Convert frequency to note name and octave
+        function frequencyToNote(frequency) {
+            if (!frequency || frequency < 20) return null;
+
+            // A4 = 440Hz, MIDI note 69
+            const midiNote = Math.round(12 * Math.log2(frequency / 440) + 69);
+            const noteIndex = ((midiNote % 12) + 12) % 12;
+            const octave = Math.floor(midiNote / 12) - 1;
+            const noteName = noteNames[noteIndex];
+
+            // Calculate cents deviation from perfect pitch
+            const perfectFreq = 440 * Math.pow(2, (midiNote - 69) / 12);
+            const cents = 1200 * Math.log2(frequency / perfectFreq);
+
+            return {
+                note: noteName,
+                octave: octave,
+                midi: midiNote,
+                cents: cents,
+                frequency: frequency
+            };
+        }
+
+        // Check if detected note matches expected note
+        function notesMatch(detected, expected) {
+            if (!detected || !expected) return false;
+
+            // Handle enharmonic equivalents (C# = Db, etc.)
+            const detectedNote = detected.note;
+            const expectedNote = expected.note;
+
+            // Direct match
+            if (detectedNote === expectedNote && detected.octave === expected.octave) {
+                return true;
+            }
+
+            // Check enharmonic equivalents
+            const enharmonics = {
+                'C#': 'Db', 'Db': 'C#',
+                'D#': 'Eb', 'Eb': 'D#',
+                'F#': 'Gb', 'Gb': 'F#',
+                'G#': 'Ab', 'Ab': 'G#',
+                'A#': 'Bb', 'Bb': 'A#'
+            };
+
+            if (enharmonics[detectedNote] === expectedNote && detected.octave === expected.octave) {
+                return true;
+            }
+
+            return false;
+        }
+
         // Show screen
         function showScreen(name) {
             Object.values(screens).forEach(s => s.classList.remove('active'));
@@ -1200,6 +1549,14 @@
 
             if (name === 'songSelect') {
                 stopPlayback();
+                // Stop pitch detection when leaving game
+                if (gameState.listenMode) {
+                    stopPitchDetection();
+                    gameState.listenMode = false;
+                    modeToggle.classList.remove('listen-mode');
+                    pitchIndicator.classList.remove('active');
+                    micStatusDot.classList.remove('listening');
+                }
             }
         }
 
@@ -1213,6 +1570,8 @@
             gameState.isPlaying = false;
             gameState.tempo = song.tempo;
             gameState.lastPlayedNoteIndex = -1;
+            gameState.currentNoteIndex = 0;
+            gameState.lastDetectionTime = 0;
 
             tempoSlider.value = song.tempo;
             tempoValue.textContent = song.tempo;
@@ -1688,9 +2047,17 @@
             stopPlayback();
             gameState.currentBeat = 0;
             gameState.lastPlayedNoteIndex = -1;
+            gameState.currentNoteIndex = 0;
+            gameState.lastDetectionTime = 0;
             drawCursor();  // This also renders the score
             updateHighlights();
             progressFill.style.width = '0%';
+
+            // Reset pitch display
+            if (gameState.listenMode) {
+                detectedNoteDisplay.textContent = '--';
+                detectedNoteDisplay.classList.remove('correct', 'incorrect');
+            }
 
             // Reset scroll
             document.querySelector('.score-container').scrollLeft = 0;
@@ -1719,6 +2086,19 @@
             const deltaTime = (currentTime - gameState.lastTime) / 1000; // in seconds
             gameState.lastTime = currentTime;
 
+            if (gameState.listenMode) {
+                // Listen mode: advance based on detected pitch
+                animateListenMode(currentTime);
+            } else {
+                // Tempo mode: advance based on time
+                animateTempoMode(deltaTime);
+            }
+
+            gameState.animationId = requestAnimationFrame(animate);
+        }
+
+        // Tempo-based animation (original behavior)
+        function animateTempoMode(deltaTime) {
             // Calculate beats per second from tempo (BPM)
             const beatsPerSecond = gameState.tempo / 60;
             gameState.currentBeat += deltaTime * beatsPerSecond;
@@ -1745,8 +2125,105 @@
 
             drawCursor();
             updateHighlights();
+        }
 
-            gameState.animationId = requestAnimationFrame(animate);
+        // Listen mode animation (pitch detection)
+        function animateListenMode(currentTime) {
+            const song = gameState.currentSong;
+            if (!song) return;
+
+            // Detect pitch from microphone
+            const frequency = detectPitch();
+            const detectedNote = frequencyToNote(frequency);
+
+            // Update pitch indicator display
+            updatePitchDisplay(detectedNote);
+
+            // Get current expected note
+            const expectedNote = song.notes[gameState.currentNoteIndex];
+            if (!expectedNote) {
+                // Song is finished
+                stopPlayback();
+                return;
+            }
+
+            // Check if detected note matches expected note
+            if (notesMatch(detectedNote, expectedNote)) {
+                // Note matches! Track how long it's been held
+                if (gameState.lastDetectionTime === 0) {
+                    gameState.lastDetectionTime = currentTime;
+                }
+
+                const heldDuration = currentTime - gameState.lastDetectionTime;
+
+                // If held long enough, advance to next note
+                if (heldDuration >= gameState.requiredHoldTime) {
+                    advanceToNextNote();
+                    gameState.lastDetectionTime = 0;
+                }
+            } else {
+                // Wrong note or no note - reset hold timer
+                gameState.lastDetectionTime = 0;
+            }
+
+            drawCursor();
+            updateHighlights();
+        }
+
+        // Update pitch display
+        function updatePitchDisplay(detectedNote) {
+            if (!detectedNote) {
+                detectedNoteDisplay.textContent = '--';
+                detectedNoteDisplay.classList.remove('correct', 'incorrect');
+                return;
+            }
+
+            const noteText = `${detectedNote.note}${detectedNote.octave}`;
+            detectedNoteDisplay.textContent = noteText;
+
+            // Check if it matches expected note
+            const song = gameState.currentSong;
+            if (song && gameState.currentNoteIndex < song.notes.length) {
+                const expectedNote = song.notes[gameState.currentNoteIndex];
+                if (notesMatch(detectedNote, expectedNote)) {
+                    detectedNoteDisplay.classList.add('correct');
+                    detectedNoteDisplay.classList.remove('incorrect');
+                } else {
+                    detectedNoteDisplay.classList.add('incorrect');
+                    detectedNoteDisplay.classList.remove('correct');
+                }
+            }
+
+            gameState.detectedNote = detectedNote;
+        }
+
+        // Advance to the next note in listen mode
+        function advanceToNextNote() {
+            const song = gameState.currentSong;
+            if (!song) return;
+
+            // Move currentBeat to the start of the next note
+            let beatSum = 0;
+            for (let i = 0; i <= gameState.currentNoteIndex; i++) {
+                beatSum += song.notes[i].duration;
+            }
+            gameState.currentBeat = beatSum;
+            gameState.currentNoteIndex++;
+
+            // Play the note sound if audio is enabled
+            if (gameState.audioEnabled && gameState.currentNoteIndex > 0) {
+                const playedNote = song.notes[gameState.currentNoteIndex - 1];
+                if (playedNote) {
+                    playNote(playedNote.note, playedNote.octave, playedNote.duration);
+                }
+            }
+
+            // Check if song is finished
+            if (gameState.currentNoteIndex >= song.notes.length) {
+                const totalBeats = song.notes.reduce((sum, n) => sum + n.duration, 0);
+                gameState.currentBeat = totalBeats;
+                stopPlayback();
+            }
         }
 
         // Start the app

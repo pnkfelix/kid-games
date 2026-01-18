@@ -432,6 +432,11 @@
             background: linear-gradient(180deg, #90EE90 0%, #7CCD7C 100%);
         }
 
+        .white-key.highlight-detected {
+            background: linear-gradient(180deg, #FFB347 0%, #FFA500 100%);
+            box-shadow: 0 0 15px rgba(255, 165, 0, 0.6);
+        }
+
         .white-key .note-name {
             font-size: 12px;
             color: #666;
@@ -487,6 +492,11 @@
 
         .black-key.highlight-predicted {
             background: linear-gradient(180deg, #228B22 0%, #1a6b1a 100%);
+        }
+
+        .black-key.highlight-detected {
+            background: linear-gradient(180deg, #CC8800 0%, #AA6600 100%);
+            box-shadow: 0 0 15px rgba(255, 165, 0, 0.6);
         }
 
         .black-key .finger-number {
@@ -545,6 +555,11 @@
         .legend-color.predicted {
             background: #90EE90;
             border: 1px solid #7CCD7C;
+        }
+
+        .legend-color.detected {
+            background: #FFB347;
+            border: 1px solid #FFA500;
         }
 
         .legend-finger {
@@ -758,6 +773,10 @@
             <div class="legend-item">
                 <div class="legend-color predicted"></div>
                 <span>Next key (coming up)</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color detected"></div>
+                <span>Detected note (Listen mode)</span>
             </div>
             <div class="legend-item">
                 <div class="legend-finger">3</div>
@@ -1962,7 +1981,7 @@
 
             // Clear all highlights
             Object.values(gameState.pianoKeys).forEach(key => {
-                key.classList.remove('highlight-active', 'highlight-predicted');
+                key.classList.remove('highlight-active', 'highlight-predicted', 'highlight-detected');
                 const fingerNum = key.querySelector('.finger-number');
                 if (fingerNum) fingerNum.textContent = '';
             });
@@ -2013,6 +2032,24 @@
             const totalBeats = song.notes.reduce((sum, n) => sum + n.duration, 0);
             const progress = (gameState.currentBeat / totalBeats) * 100;
             progressFill.style.width = `${Math.min(100, progress)}%`;
+
+            // In listen mode, highlight the detected note if it doesn't match expected
+            if (gameState.listenMode && gameState.isPlaying && gameState.detectedNote) {
+                const detected = gameState.detectedNote;
+                const expectedNote = currentNote;
+
+                // Only show detected highlight if it's different from expected
+                if (!notesMatch(detected, expectedNote)) {
+                    const detectedNoteId = `${detected.note.replace('#', 's')}${detected.octave}`;
+                    const detectedKey = gameState.pianoKeys[detectedNoteId];
+                    if (detectedKey) {
+                        // Don't override the active highlight if it happens to be the same key
+                        if (!detectedKey.classList.contains('highlight-active')) {
+                            detectedKey.classList.add('highlight-detected');
+                        }
+                    }
+                }
+            }
         }
 
         // Toggle playback

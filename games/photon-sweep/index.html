@@ -103,11 +103,61 @@
             0%, 100% { opacity: 1; }
             50% { opacity: 0.5; }
         }
+
+        /* Touch controls */
+        #touch-controls {
+            display: none;
+            position: fixed;
+            bottom: 0; left: 0; right: 0;
+            height: 110px;
+            z-index: 600;
+            pointer-events: none;
+        }
+        .tc-btn {
+            pointer-events: auto;
+            position: absolute;
+            width: 60px; height: 60px;
+            border-radius: 50%;
+            border: 2px solid rgba(255,255,255,0.25);
+            background: rgba(255,255,255,0.08);
+            color: rgba(255,255,255,0.7);
+            font-size: 22px;
+            line-height: 56px;
+            text-align: center;
+            outline: none;
+            -webkit-tap-highlight-color: transparent;
+            transition: background 0.1s;
+        }
+        .tc-btn:active, .tc-btn.active {
+            background: rgba(255,255,255,0.25);
+            border-color: rgba(255,255,255,0.5);
+        }
+        #tc-left  { left: 20px; bottom: 25px; }
+        #tc-right { left: 92px; bottom: 25px; }
+        #tc-thrust { right: 92px; bottom: 25px; }
+        #tc-fire  {
+            right: 20px; bottom: 25px;
+            border-color: rgba(255,200,50,0.4);
+            color: rgba(255,220,80,0.85);
+            font-size: 13px; font-weight: 700;
+            line-height: 56px;
+        }
+        #tc-fire:active, #tc-fire.active {
+            background: rgba(255,200,50,0.25);
+            border-color: rgba(255,220,80,0.6);
+        }
     </style>
 </head>
 <body>
     <a class="home-btn" href="../../index.html">&larr; Home</a>
     <canvas id="game"></canvas>
+
+    <div id="touch-controls">
+        <button id="tc-left" class="tc-btn">&larr;</button>
+        <button id="tc-right" class="tc-btn">&rarr;</button>
+        <button id="tc-thrust" class="tc-btn">&#9650;</button>
+        <button id="tc-fire" class="tc-btn">FIRE</button>
+    </div>
 
     <div id="title-screen" class="overlay">
         <h1>PHOTON SWEEP</h1>
@@ -128,18 +178,25 @@
     // ========================================
     // CONSTANTS
     // ========================================
-    const TIME_SCALE = 200;       // pixels of player movement per game-second
+    const TIME_SCALE = 250;       // pixels of player movement per game-second
     const MAX_GAME_DT = 0.06;    // cap to prevent tunneling
-    const PLAYER_KB_SPEED = 280;  // keyboard movement pixels per real-second
     const PLAYER_RADIUS = 14;
     const PLAYER_MAX_HP = 5;
     const PLAYER_START_HP = 3;
     const INVULN_DURATION = 1.5;  // game-seconds
 
+    // Asteroids-style physics
+    const ROTATION_SPEED = 4.0;   // radians per real-second
+    const THRUST_POWER = 400;     // px/s² acceleration
+    const MAX_VELOCITY = 300;     // px/s speed cap
+    const DRAG = 1.5;             // natural drag coefficient (velocity decays in real-time)
+    const BRAKE_DRAG = 5.0;       // strong drag when braking
+    const RECOIL = 20;            // px/s velocity kick per shot
+
     const BULLET_SPEED = 500;
     const BULLET_RADIUS = 4;
     const BULLET_LIFETIME = 1.2;  // game-seconds
-    const FIRE_INTERVAL = 0.18;   // game-seconds between shots
+    const FIRE_COOLDOWN = 0.15;   // real-seconds between manual shots
 
     const PICKUP_RADIUS = 12;
     const PICKUP_LIFETIME = 12;   // game-seconds
@@ -303,6 +360,7 @@
             this.sfx = new SFX();
             this.stars = generateStars(300, 2000);
             this.state = 'title'; // title | playing | gameover
+            this.hasTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
             this.resize();
             this.reset();
             this.setupInput();
@@ -323,10 +381,11 @@
         reset() {
             this.player = {
                 x: 0, y: 0,
+                vx: 0, vy: 0,          // velocity (inertia)
                 hp: PLAYER_START_HP,
                 maxHp: PLAYER_MAX_HP,
-                facing: 0,
-                fireTimer: 0,
+                facing: -Math.PI / 2,   // start facing up
+                fireTimer: 0,           // real-time cooldown
                 powerLevel: 0,
                 invulnTimer: 0,
             };
@@ -336,9 +395,10 @@
             this.particles = [];
             this.score = 0;
             this.totalGameTime = 0;
-            this.spawnTimer = 0;
+            this.spawnTimer = 1.0;      // brief grace period
             this.shakeAmount = 0;
             this.isMoving = false;
+            this.isThrusting = false;
             this.difficulty = 0;
             this.enemiesKilled = 0;
         }
@@ -348,8 +408,7 @@
         // ========================================
         setupInput() {
             this.keys = {};
-            this.touch = { active: false, lastX: 0, lastY: 0, dx: 0, dy: 0 };
-            this.mouse = { active: false, lastX: 0, lastY: 0, dx: 0, dy: 0 };
+            this.touchBtns = { left: false, right: false, thrust: false, fire: false };
 
             // Keyboard
             window.addEventListener('keydown', e => {
@@ -360,99 +419,41 @@
             });
             window.addEventListener('keyup', e => { this.keys[e.key] = false; });
 
-            // Touch
-            this.canvas.addEventListener('touchstart', e => {
-                e.preventDefault();
-                if (this.state !== 'playing') return;
-                const t = e.touches[0];
-                this.touch.active = true;
-                this.touch.lastX = t.clientX;
-                this.touch.lastY = t.clientY;
-                this.touch.dx = 0;
-                this.touch.dy = 0;
-            }, { passive: false });
+            // Touch buttons (multi-touch safe via touch identifier tracking)
+            const setupBtn = (id, key) => {
+                const btn = document.getElementById(id);
+                if (!btn) return;
+                let activeTouchId = null;
+                btn.addEventListener('touchstart', (e) => {
+                    e.preventDefault();
+                    activeTouchId = e.changedTouches[0].identifier;
+                    this.touchBtns[key] = true;
+                    btn.classList.add('active');
+                }, { passive: false });
+                btn.addEventListener('touchend', (e) => {
+                    for (const t of e.changedTouches) {
+                        if (t.identifier === activeTouchId) {
+                            activeTouchId = null;
+                            this.touchBtns[key] = false;
+                            btn.classList.remove('active');
+                        }
+                    }
+                }, { passive: false });
+                btn.addEventListener('touchcancel', () => {
+                    activeTouchId = null;
+                    this.touchBtns[key] = false;
+                    btn.classList.remove('active');
+                });
+            };
 
-            this.canvas.addEventListener('touchmove', e => {
-                e.preventDefault();
-                if (!this.touch.active) return;
-                const t = e.touches[0];
-                this.touch.dx = t.clientX - this.touch.lastX;
-                this.touch.dy = t.clientY - this.touch.lastY;
-                this.touch.lastX = t.clientX;
-                this.touch.lastY = t.clientY;
-            }, { passive: false });
+            setupBtn('tc-left', 'left');
+            setupBtn('tc-right', 'right');
+            setupBtn('tc-thrust', 'thrust');
+            setupBtn('tc-fire', 'fire');
 
-            this.canvas.addEventListener('touchend', e => {
-                e.preventDefault();
-                this.touch.active = false;
-                this.touch.dx = 0;
-                this.touch.dy = 0;
-            }, { passive: false });
-
-            this.canvas.addEventListener('touchcancel', e => {
-                this.touch.active = false;
-                this.touch.dx = 0;
-                this.touch.dy = 0;
-            });
-
-            // Mouse
-            this.canvas.addEventListener('mousedown', e => {
-                if (this.state !== 'playing') return;
-                this.mouse.active = true;
-                this.mouse.lastX = e.clientX;
-                this.mouse.lastY = e.clientY;
-                this.mouse.dx = 0;
-                this.mouse.dy = 0;
-            });
-
-            window.addEventListener('mousemove', e => {
-                if (!this.mouse.active) return;
-                this.mouse.dx = e.clientX - this.mouse.lastX;
-                this.mouse.dy = e.clientY - this.mouse.lastY;
-                this.mouse.lastX = e.clientX;
-                this.mouse.lastY = e.clientY;
-            });
-
-            window.addEventListener('mouseup', () => {
-                this.mouse.active = false;
-                this.mouse.dx = 0;
-                this.mouse.dy = 0;
-            });
-        }
-
-        getMovementDelta(realDt) {
-            let dx = 0, dy = 0;
-
-            // Touch input (direct delta)
-            if (this.touch.active) {
-                dx += this.touch.dx;
-                dy += this.touch.dy;
-                this.touch.dx = 0;
-                this.touch.dy = 0;
-            }
-
-            // Mouse drag
-            if (this.mouse.active) {
-                dx += this.mouse.dx;
-                dy += this.mouse.dy;
-                this.mouse.dx = 0;
-                this.mouse.dy = 0;
-            }
-
-            // Keyboard
-            const kbDist = PLAYER_KB_SPEED * realDt;
-            let kx = 0, ky = 0;
-            if (this.keys['ArrowLeft'] || this.keys['a'] || this.keys['A']) kx -= 1;
-            if (this.keys['ArrowRight'] || this.keys['d'] || this.keys['D']) kx += 1;
-            if (this.keys['ArrowUp'] || this.keys['w'] || this.keys['W']) ky -= 1;
-            if (this.keys['ArrowDown'] || this.keys['s'] || this.keys['S']) ky += 1;
-            if (kx || ky) {
-                const len = Math.sqrt(kx * kx + ky * ky);
-                dx += (kx / len) * kbDist;
-                dy += (ky / len) * kbDist;
-            }
-
-            return { dx, dy };
+            // Prevent default touch on canvas to avoid scrolling
+            this.canvas.addEventListener('touchstart', e => e.preventDefault(), { passive: false });
+            this.canvas.addEventListener('touchmove', e => e.preventDefault(), { passive: false });
         }
 
         // ========================================
@@ -505,13 +506,12 @@
         }
 
         spawnPickup(x, y, enemyType) {
-            // Determine drop based on random chance
             const r = Math.random();
             let type;
-            if (r < 0.08) type = 'power';       // 8% power
-            else if (r < 0.20) type = 'health';  // 12% health
-            else if (r < 0.60) type = 'score';   // 40% score
-            else return; // 40% no drop
+            if (r < 0.08) type = 'power';
+            else if (r < 0.20) type = 'health';
+            else if (r < 0.60) type = 'score';
+            else return;
 
             this.pickups.push({
                 x, y, type,
@@ -553,6 +553,9 @@
                     trail: [],
                 });
             }
+            // Recoil: small velocity kick opposite to facing
+            p.vx -= Math.cos(p.facing) * RECOIL;
+            p.vy -= Math.sin(p.facing) * RECOIL;
             this.sfx.play('shoot');
         }
 
@@ -562,41 +565,87 @@
         update(realDt) {
             if (this.state !== 'playing') return;
 
-            // Get player movement
-            const move = this.getMovementDelta(realDt);
-            const moveDist = Math.sqrt(move.dx * move.dx + move.dy * move.dy);
+            const p = this.player;
 
-            // Apply player movement
-            this.player.x += move.dx;
-            this.player.y += move.dy;
+            // --- Read input state ---
+            const rotLeft  = this.keys['ArrowLeft']  || this.keys['a'] || this.keys['A'] || this.touchBtns.left;
+            const rotRight = this.keys['ArrowRight'] || this.keys['d'] || this.keys['D'] || this.touchBtns.right;
+            const thrusting = this.keys['ArrowUp']   || this.keys['w'] || this.keys['W'] || this.touchBtns.thrust;
+            const braking   = this.keys['ArrowDown'] || this.keys['s'] || this.keys['S'];
+            const firing    = this.keys[' '] || this.touchBtns.fire;
 
-            // Update facing direction
-            if (moveDist > 0.5) {
-                this.player.facing = Math.atan2(move.dy, move.dx);
+            // --- Rotation (real-time, always works even when time is frozen) ---
+            if (rotLeft)  p.facing -= ROTATION_SPEED * realDt;
+            if (rotRight) p.facing += ROTATION_SPEED * realDt;
+
+            // --- Thrust (real-time acceleration) ---
+            this.isThrusting = thrusting;
+            if (thrusting) {
+                p.vx += Math.cos(p.facing) * THRUST_POWER * realDt;
+                p.vy += Math.sin(p.facing) * THRUST_POWER * realDt;
             }
 
-            this.isMoving = moveDist > 0.3;
+            // --- Drag (real-time so the ship can actually come to a stop) ---
+            const dragCoeff = braking ? BRAKE_DRAG : DRAG;
+            const dragMult = Math.max(0, 1 - dragCoeff * realDt);
+            p.vx *= dragMult;
+            p.vy *= dragMult;
 
-            // Calculate game time delta
+            // --- Velocity cap ---
+            let speed = Math.sqrt(p.vx * p.vx + p.vy * p.vy);
+            if (speed > MAX_VELOCITY) {
+                p.vx = (p.vx / speed) * MAX_VELOCITY;
+                p.vy = (p.vy / speed) * MAX_VELOCITY;
+                speed = MAX_VELOCITY;
+            }
+
+            // --- Snap to zero when nearly stopped ---
+            if (speed < 2) {
+                p.vx = 0;
+                p.vy = 0;
+                speed = 0;
+            }
+
+            // --- Move player based on velocity ---
+            p.x += p.vx * realDt;
+            p.y += p.vy * realDt;
+            const moveDist = speed * realDt;
+
+            this.isMoving = speed > 3;
+
+            // --- Game time flows proportionally to ship speed ---
             const gameDt = Math.min(moveDist / TIME_SCALE, MAX_GAME_DT);
             this.totalGameTime += gameDt;
             this.difficulty = Math.floor(this.totalGameTime / 10);
 
-            // -- Fire bullets --
-            if (gameDt > 0) {
-                this.player.fireTimer -= gameDt;
-                if (this.player.fireTimer <= 0) {
-                    this.fireBullets();
-                    this.player.fireTimer = FIRE_INTERVAL;
-                }
+            // --- Fire bullets (manual, real-time cooldown) ---
+            if (p.fireTimer > 0) p.fireTimer -= realDt;
+            if (firing && p.fireTimer <= 0) {
+                this.fireBullets();
+                p.fireTimer = FIRE_COOLDOWN;
             }
 
-            // -- Invulnerability --
-            if (this.player.invulnTimer > 0) {
-                this.player.invulnTimer -= gameDt;
+            // --- Thrust particles (real-time visual feedback) ---
+            if (thrusting && Math.random() < 0.4) {
+                const backAng = p.facing + Math.PI;
+                this.particles.push({
+                    x: p.x + Math.cos(backAng) * PLAYER_RADIUS,
+                    y: p.y + Math.sin(backAng) * PLAYER_RADIUS,
+                    vx: Math.cos(backAng + rand(-0.5, 0.5)) * rand(60, 140),
+                    vy: Math.sin(backAng + rand(-0.5, 0.5)) * rand(60, 140),
+                    life: rand(0.1, 0.3),
+                    maxLife: 0.3,
+                    color: Math.random() < 0.5 ? '#ff8833' : '#ffdd44',
+                    size: rand(1.5, 3),
+                });
             }
 
-            // -- Update bullets --
+            // -- Invulnerability (game-time) --
+            if (p.invulnTimer > 0) {
+                p.invulnTimer -= gameDt;
+            }
+
+            // -- Update bullets (game-time) --
             for (const b of this.bullets) {
                 b.lifetime -= gameDt;
                 if (gameDt > 0) {
@@ -607,8 +656,7 @@
                 b.y += b.vy * gameDt;
             }
 
-            // -- Update enemies --
-            const p = this.player;
+            // -- Update enemies (game-time) --
             for (const e of this.enemies) {
                 if (gameDt <= 0) break;
                 switch (e.type) {
@@ -626,7 +674,6 @@
                             e.dashDuration -= gameDt;
                             if (e.dashDuration <= 0) e.isDashing = false;
                         } else {
-                            // Drift slowly toward player
                             const a = angle(e, p);
                             e.x += Math.cos(a) * e.speed * 0.4 * gameDt;
                             e.y += Math.sin(a) * e.speed * 0.4 * gameDt;
@@ -678,11 +725,9 @@
                     const e = this.enemies[ei];
                     if (dist(b, e) < BULLET_RADIUS + e.radius) {
                         e.hp--;
-                        b.lifetime = -1; // mark for removal
-                        // Hit particles
+                        b.lifetime = -1;
                         this.spawnParticles(b.x, b.y, e.color, 4, 120);
                         if (e.hp <= 0) {
-                            // Enemy destroyed
                             this.score += e.score;
                             this.enemiesKilled++;
                             this.spawnParticles(e.x, e.y, e.color, 12, 180);
@@ -736,7 +781,7 @@
                                 p.powerLevel++;
                                 this.sfx.play('powerup');
                             } else {
-                                this.score += 500; // bonus if maxed
+                                this.score += 500;
                                 this.sfx.play('pickup');
                             }
                             break;
@@ -768,7 +813,6 @@
                 pk.lifetime > 0 && dist(pk, p) < ENEMY_DESPAWN_DIST);
             this.particles = this.particles.filter(pt => pt.life > 0);
 
-            // Cap entity counts
             if (this.particles.length > 150)
                 this.particles.splice(0, this.particles.length - 150);
 
@@ -810,7 +854,6 @@
                 const factor = parallax[star.layer];
                 const sx = ((star.x - camX * factor) % starArea + starArea) % starArea;
                 const sy = ((star.y - camY * factor) % starArea + starArea) % starArea;
-                // Only draw if on screen
                 if (sx < w + 2 && sy < h + 2) {
                     const twinkle = 0.5 + 0.5 * Math.sin(this.realTime * 2 + star.twinkleOffset);
                     const alpha = star.brightness * (0.6 + 0.4 * twinkle);
@@ -832,25 +875,20 @@
                 const alpha = fadeIn * fadeOut;
 
                 ctx.globalAlpha = alpha;
-                // Glow
                 ctx.fillStyle = pk.type === 'score' ? 'rgba(255,215,0,0.15)' :
                     pk.type === 'health' ? 'rgba(255,107,157,0.15)' : 'rgba(68,221,255,0.15)';
                 ctx.beginPath();
                 ctx.arc(pk.x, py, PICKUP_RADIUS * 2, 0, Math.PI * 2);
                 ctx.fill();
 
-                // Icon
                 const col = pk.type === 'score' ? COLORS.scorePickup :
                     pk.type === 'health' ? COLORS.healthPickup : COLORS.powerPickup;
                 ctx.fillStyle = col;
                 if (pk.type === 'score') {
-                    // Star shape
                     this.drawStar(ctx, pk.x, py, PICKUP_RADIUS, 5);
                 } else if (pk.type === 'health') {
-                    // Heart
                     this.drawHeart(ctx, pk.x, py, PICKUP_RADIUS);
                 } else {
-                    // Diamond
                     this.drawDiamond(ctx, pk.x, py, PICKUP_RADIUS);
                 }
                 ctx.globalAlpha = 1;
@@ -858,28 +896,18 @@
 
             // -- Enemies --
             for (const e of this.enemies) {
-                // Glow
                 ctx.fillStyle = e.color.replace(')', ',0.1)').replace('rgb', 'rgba');
                 ctx.beginPath();
                 ctx.arc(e.x, e.y, e.radius * 1.8, 0, Math.PI * 2);
                 ctx.fill();
 
                 switch (e.type) {
-                    case 'drifter':
-                        this.drawDrifter(ctx, e);
-                        break;
-                    case 'dasher':
-                        this.drawDasher(ctx, e);
-                        break;
-                    case 'tank':
-                        this.drawTank(ctx, e);
-                        break;
-                    case 'orbiter':
-                        this.drawOrbiter(ctx, e);
-                        break;
+                    case 'drifter': this.drawDrifter(ctx, e); break;
+                    case 'dasher':  this.drawDasher(ctx, e);  break;
+                    case 'tank':    this.drawTank(ctx, e);    break;
+                    case 'orbiter': this.drawOrbiter(ctx, e); break;
                 }
 
-                // HP bar for enemies with more than 1 max hp
                 if (e.maxHp > 1 && e.hp < e.maxHp) {
                     const bw = e.radius * 2;
                     const bh = 3;
@@ -894,7 +922,6 @@
 
             // -- Bullets --
             for (const b of this.bullets) {
-                // Trail
                 for (let i = 0; i < b.trail.length; i++) {
                     const t = b.trail[i];
                     const alpha = (i + 1) / (b.trail.length + 1) * 0.4;
@@ -904,17 +931,14 @@
                     ctx.arc(t.x, t.y, r, 0, Math.PI * 2);
                     ctx.fill();
                 }
-                // Glow
                 ctx.fillStyle = COLORS.bulletGlow;
                 ctx.beginPath();
                 ctx.arc(b.x, b.y, BULLET_RADIUS * 2.5, 0, Math.PI * 2);
                 ctx.fill();
-                // Core
                 ctx.fillStyle = COLORS.bullet;
                 ctx.beginPath();
                 ctx.arc(b.x, b.y, BULLET_RADIUS, 0, Math.PI * 2);
                 ctx.fill();
-                // White center
                 ctx.fillStyle = '#fff';
                 ctx.beginPath();
                 ctx.arc(b.x, b.y, BULLET_RADIUS * 0.4, 0, Math.PI * 2);
@@ -940,10 +964,32 @@
                 ctx.arc(p.x, p.y, PLAYER_RADIUS * 2.5, 0, Math.PI * 2);
                 ctx.fill();
 
-                // Ship body
                 ctx.save();
                 ctx.translate(p.x, p.y);
                 ctx.rotate(p.facing);
+
+                // Thrust flame (drawn behind ship)
+                if (this.isThrusting) {
+                    const flickerLen = PLAYER_RADIUS * (0.6 + Math.random() * 0.6);
+                    // Outer flame
+                    ctx.fillStyle = '#ff8833';
+                    ctx.beginPath();
+                    ctx.moveTo(-PLAYER_RADIUS * 0.3, -PLAYER_RADIUS * 0.35);
+                    ctx.lineTo(-PLAYER_RADIUS - flickerLen, 0);
+                    ctx.lineTo(-PLAYER_RADIUS * 0.3, PLAYER_RADIUS * 0.35);
+                    ctx.closePath();
+                    ctx.fill();
+                    // Inner flame
+                    ctx.fillStyle = '#ffdd66';
+                    ctx.beginPath();
+                    ctx.moveTo(-PLAYER_RADIUS * 0.3, -PLAYER_RADIUS * 0.2);
+                    ctx.lineTo(-PLAYER_RADIUS - flickerLen * 0.45, 0);
+                    ctx.lineTo(-PLAYER_RADIUS * 0.3, PLAYER_RADIUS * 0.2);
+                    ctx.closePath();
+                    ctx.fill();
+                }
+
+                // Ship body
                 ctx.fillStyle = COLORS.player;
                 ctx.beginPath();
                 ctx.moveTo(PLAYER_RADIUS, 0);
@@ -953,11 +999,12 @@
                 ctx.closePath();
                 ctx.fill();
 
-                // White cockpit
+                // Cockpit
                 ctx.fillStyle = '#fff';
                 ctx.beginPath();
                 ctx.arc(PLAYER_RADIUS * 0.2, 0, PLAYER_RADIUS * 0.22, 0, Math.PI * 2);
                 ctx.fill();
+
                 ctx.restore();
             }
 
@@ -968,7 +1015,6 @@
 
             // -- Time frozen overlay --
             if (!this.isMoving && this.state === 'playing') {
-                // Subtle vignette
                 const grad = ctx.createRadialGradient(
                     w / 2, h / 2, w * 0.25,
                     w / 2, h / 2, w * 0.75
@@ -978,7 +1024,6 @@
                 ctx.fillStyle = grad;
                 ctx.fillRect(0, 0, w, h);
 
-                // "TIME STOPPED" text
                 const pulse = 0.4 + 0.3 * Math.sin(this.realTime * 3);
                 ctx.fillStyle = `rgba(100,180,255,${pulse.toFixed(2)})`;
                 ctx.font = '13px "Segoe UI", system-ui, sans-serif';
@@ -1015,19 +1060,17 @@
             ctx.textAlign = 'right';
             ctx.fillText(this.score.toLocaleString(), w - 20, 30);
 
-            // Score label
             ctx.fillStyle = 'rgba(255,255,255,0.5)';
             ctx.font = '11px "Segoe UI", system-ui, sans-serif';
             ctx.fillText('SCORE', w - 20, 46);
 
-            // Power level indicator
+            // Power level
             ctx.textAlign = 'center';
             ctx.fillStyle = 'rgba(68,221,255,0.7)';
             ctx.font = '11px "Segoe UI", system-ui, sans-serif';
             const powerText = 'POWER ' + (this.player.powerLevel + 1);
             ctx.fillText(powerText, w / 2, 22);
 
-            // Power bar
             const barW = 60;
             const barH = 3;
             const barX = w / 2 - barW / 2;
@@ -1037,7 +1080,7 @@
             ctx.fillStyle = COLORS.powerPickup;
             ctx.fillRect(barX, barY, barW * ((this.player.powerLevel + 1) / (MAX_POWER + 1)), barH);
 
-            // Wave / difficulty
+            // Wave
             ctx.fillStyle = 'rgba(255,255,255,0.3)';
             ctx.font = '10px "Segoe UI", system-ui, sans-serif';
             ctx.textAlign = 'left';
@@ -1085,12 +1128,10 @@
         }
 
         drawDrifter(ctx, e) {
-            // Red circle with eyes
             ctx.fillStyle = e.color;
             ctx.beginPath();
             ctx.arc(e.x, e.y, e.radius, 0, Math.PI * 2);
             ctx.fill();
-            // Eyes
             const eyeOff = e.radius * 0.3;
             ctx.fillStyle = '#fff';
             ctx.beginPath();
@@ -1105,7 +1146,6 @@
         }
 
         drawDasher(ctx, e) {
-            // Purple triangle
             const a = e.isDashing ? e.dashAngle : angle(e, this.player);
             ctx.save();
             ctx.translate(e.x, e.y);
@@ -1117,7 +1157,6 @@
             ctx.lineTo(-e.radius * 0.8, e.radius * 0.7);
             ctx.closePath();
             ctx.fill();
-            // Dash indicator
             if (e.isDashing) {
                 ctx.fillStyle = 'rgba(255,255,255,0.4)';
                 ctx.beginPath();
@@ -1128,7 +1167,6 @@
         }
 
         drawTank(ctx, e) {
-            // Green hexagon
             ctx.fillStyle = e.color;
             ctx.beginPath();
             for (let i = 0; i < 6; i++) {
@@ -1140,7 +1178,6 @@
             }
             ctx.closePath();
             ctx.fill();
-            // Inner
             ctx.fillStyle = 'rgba(0,0,0,0.2)';
             ctx.beginPath();
             for (let i = 0; i < 6; i++) {
@@ -1155,7 +1192,6 @@
         }
 
         drawOrbiter(ctx, e) {
-            // Orange diamond that rotates
             ctx.save();
             ctx.translate(e.x, e.y);
             ctx.rotate(this.realTime * 3);
@@ -1180,11 +1216,15 @@
             this.state = 'playing';
             document.getElementById('title-screen').classList.add('hidden');
             document.getElementById('game-over').classList.add('hidden');
+            if (this.hasTouch) {
+                document.getElementById('touch-controls').style.display = 'block';
+            }
         }
 
         gameOver() {
             this.state = 'gameover';
             this.sfx.play('gameover');
+            document.getElementById('touch-controls').style.display = 'none';
             const highScore = parseInt(localStorage.getItem('photonSweep_highScore') || '0');
             const isNewBest = this.score > highScore;
             if (isNewBest) {
@@ -1226,25 +1266,23 @@
         const canvas = document.getElementById('game');
         const game = new Game(canvas);
 
-        // Detect touch support for instructions
         const hasTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
         const controlsEl = document.getElementById('controls-text');
         if (hasTouch) {
             controlsEl.innerHTML =
-                'Drag your finger to move<br>' +
-                'Bullets fire automatically in your direction<br>' +
-                'Defeat enemies &bull; Collect power-ups &bull; Survive!';
+                'Use on-screen buttons to rotate, thrust, and fire<br>' +
+                'Your ship has inertia &mdash; thrust to move, drag slows you down<br>' +
+                'Time flows only while your ship is moving!';
         } else {
             controlsEl.innerHTML =
-                'WASD or Arrow Keys to move &bull; Click &amp; drag also works<br>' +
-                'Bullets fire automatically in your direction<br>' +
-                'Defeat enemies &bull; Collect power-ups &bull; Survive!';
+                'A/D or &larr;/&rarr; to rotate &bull; W/&uarr; to thrust &bull; S/&darr; to brake<br>' +
+                'SPACE to fire &bull; Your ship drifts with inertia!<br>' +
+                'Time flows only while your ship is moving!';
         }
 
         document.getElementById('start-btn').addEventListener('click', () => game.start());
         document.getElementById('restart-btn').addEventListener('click', () => game.start());
 
-        // Load high score
         const hs = localStorage.getItem('photonSweep_highScore') || '0';
         document.getElementById('best-score').textContent = parseInt(hs).toLocaleString();
 
